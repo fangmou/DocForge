@@ -151,5 +151,42 @@
   "msg.renameFailed": "重命名失败:",
   "msg.createFileFailed": "创建文件失败:",
   "msg.createDirFailed": "创建文件夹失败:",
-  "msg.renderError": "渲染错误: {error}"
+  "msg.renderError": "渲染错误: {error}",
+
+  "toolbar.toggleBacklinks": "反向链接",
+  "toolbar.toggleGraph": "知识图谱",
+  "toolbar.togglePluginManager": "插件管理",
+  "toolbar.toggleTags": "标签",
+
+  "tab.close": "关闭",
+  "tab.closeOthers": "关闭其他",
+  "tab.closeAll": "关闭全部",
+  "tab.copyPath": "复制路径",
+  "tab.revealInShell": "在文件管理器中显示",
+
+  "backlinks.title": "反向链接",
+  "backlinks.empty": "无反向链接",
+
+  "tags.title": "标签",
+  "tags.empty": "使用 :keywords: 属性添加标签",
+  "tags.noFiles": "该标签下无文件",
+
+  "graph.title": "知识图谱",
+  "graph.filterPlaceholder": "过滤节点...",
+  "graph.nodeCount": "节点",
+  "graph.edgeCount": "连接",
+
+  "plugin.title": "插件管理",
+  "plugin.empty": "将插件放入 .docforge/plugins/ 目录",
+  "plugin.dirHint": "插件目录: .docforge/plugins/",
+
+  "outline.expandAll": "全部展开",
+  "outline.collapseAll": "全部折叠",
+  "outline.filterPlaceholder": "过滤标题...",
+
+  "search.regex": "正则",
+  "search.replace": "替换",
+  "search.replacePlaceholder": "替换为...",
+  "search.replaceAll": "全部替换",
+  "search.replaceOne": "替换"
 }

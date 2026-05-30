@@ -126,12 +126,25 @@ class AppShell extends LitElement {
         eventBus.emit('preview-visibility-changed', this.previewVisible);
       },
       'theme-changed': (theme) => { document.documentElement.setAttribute('data-theme', theme); },
+      'reveal-in-shell': async (path) => {
+        try { await window.__TAURI__.core.invoke('reveal_in_shell', { path }); } catch (_) {}
+      },
     };
     this._onMouseMove = (e) => this._doResize(e);
     this._onMouseUp = () => this._stopResize();
     for (const [name, handler] of Object.entries(this._handlers)) {
       eventBus.on(name, handler);
     }
+    // 工作区打开时加载插件和链接索引
+    this._wsHandler = async (wsPath) => {
+      try {
+        const { pluginLoader } = await import('../services/plugin-loader.js');
+        await pluginLoader.loadAll(wsPath);
+        const { linkIndex } = await import('../services/link-index.js');
+        await linkIndex.buildIndex(wsPath);
+      } catch (_) {}
+    };
+    eventBus.on('workspace-opened', this._wsHandler);
     // 启动时加载配置（语言 + 上次工作区）
     this._loadConfig();
     // Tauri 原生拖拽（全平台通用，Linux 上 web API 的 file.path 不可用）
@@ -161,6 +174,14 @@ class AppShell extends LitElement {
       if (edConfig.language) {
         await setLanguage(edConfig.language);
         eventBus.emit('language-changed', edConfig.language);
+      }
+      // 恢复侧栏宽度
+      if (edConfig.sidebar_width && edConfig.sidebar_width > 0) {
+        const sidebar = this.shadowRoot.querySelector('.sidebar');
+        if (sidebar) {
+          sidebar.style.width = edConfig.sidebar_width + 'px';
+          sidebar.style.minWidth = edConfig.sidebar_width + 'px';
+        }
       }
       // 恢复上次工作区
       const ws = await getCurrentWorkspace();
@@ -229,6 +250,16 @@ class AppShell extends LitElement {
     document.body.style.userSelect = '';
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
+    // 持久化侧栏宽度
+    const width = sidebar.offsetWidth;
+    if (width > 0) {
+      import('../services/config-service.js').then(({ loadEditorConfig, saveEditorConfig }) => {
+        loadEditorConfig().then(config => {
+          config.sidebar_width = width;
+          saveEditorConfig(config);
+        });
+      }).catch(() => {});
+    }
   }
 
   render() {
@@ -258,12 +289,16 @@ class AppShell extends LitElement {
             <search-panel></search-panel>
             <ai-panel></ai-panel>
             <template-panel></template-panel>
+            <backlinks-panel></backlinks-panel>
+            <tags-panel></tags-panel>
           </div>
         </div>
       </div>
       <status-bar></status-bar>
       <settings-dialog></settings-dialog>
       <context-menu></context-menu>
+      <graph-view></graph-view>
+      <plugin-manager-panel></plugin-manager-panel>
     `;
   }
 }

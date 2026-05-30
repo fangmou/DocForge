@@ -31,6 +31,7 @@ pub struct EditorConfig {
     pub word_wrap: bool,
     pub auto_save_interval: u32,
     pub language: String,
+    pub sidebar_width: u32,
 }
 
 impl Default for EditorConfig {
@@ -42,6 +43,7 @@ impl Default for EditorConfig {
             word_wrap: false,
             auto_save_interval: 3000,
             language: "zh".into(),
+            sidebar_width: 240,
         }
     }
 }

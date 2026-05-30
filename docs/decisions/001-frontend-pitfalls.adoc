@@ -77,3 +77,21 @@
 - 重命名后手动迁移 `editorState.files` 中的 key，并更新编辑器 `_currentPath`。
 - 编辑器监听 `file-closed` / `file-renamed` 事件做对应处理。
 *规则*: 涉及文件系统变更的操作（增删改），必须同步更新三处：磁盘、editorState、UI 组件。任何一环遗漏都会导致状态不一致。
+
+== Lit Shadow DOM 事件委托中 e.target 会被重定向
+
+*症状*: 标签页右键菜单弹出的总是浏览器默认菜单，自定义菜单不显示。
+*原因*: `this.addEventListener('contextmenu', (e) => { const tab = e.target.closest('[data-path]') ... })` 注册在 Lit 组件 host 上。Shadow DOM 会将事件 target 重定向为 host 元素本身，`e.target` 始终是 `<tab-bar>` 而非内部 `.tab` div，`closest('[data-path]')` 找不到目标。
+*正确*: 直接在 Lit 模板中绑定 `@contextmenu=${(e) => this._onContextMenu(e, f.path)}`，handler 直接接收数据而非从 DOM 反查。
+
+== 事件冒泡 + document 级监听器导致菜单瞬间消失
+
+*症状*: 右键菜单闪现后立即消失，或根本看不到。
+*原因*: `context-menu.js` 注册了 `document.addEventListener('contextmenu', hideHandler)`。标签页 `contextmenu` 事件触发后：先执行 `_onContextMenu` 发射 `show-context-menu` 显示菜单 → 事件继续冒泡到 document → `hideHandler` 立即隐藏菜单。
+*正确*: 在显示菜单的 handler 中调用 `e.stopPropagation()`，阻止事件冒泡到 document。
+
+== CSS left/top 在无 position 的元素上无效
+
+*症状*: 右键菜单总是出现在左上角 (0,0)。
+*原因*: `:host` 有 `position: fixed`，但 `left`/`top` 值通过 JS 设置在子元素 `.menu` 的 inline style 上。`.menu` 没有声明 `position` 属性，CSS `left`/`top` 只对 `position` 非 `static` 的元素生效，因此值被忽略。
+*正确*: 将 `this.style.left = x + 'px'` 和 `this.style.top = y + 'px'` 设置在有 `position: fixed` 的 host 元素上，而非子元素。

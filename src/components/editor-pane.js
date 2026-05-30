@@ -104,13 +104,15 @@ function _toRelativePath(fromDir, absPath) {
   return '../'.repeat(from.length - i) + to.slice(i).join('/');
 }
 
-// include:: Ctrl+Click 装饰
+// include:: 和 xref: Ctrl+Click 装饰
 const includeDeco = Decoration.mark({ class: 'cm-include-link' });
+const xrefDeco = Decoration.mark({ class: 'cm-include-link' });
 
-function buildIncludeDecorations(state) {
+function buildLinkDecorations(state) {
   const builder = new RangeSetBuilder();
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
+    // include:: 装饰
     let searchFrom = 0;
     while (searchFrom < line.text.length) {
       const idx = line.text.indexOf('include::', searchFrom);
@@ -122,14 +124,39 @@ function buildIncludeDecorations(state) {
       }
       searchFrom = pathStart;
     }
+    // xref: 装饰
+    searchFrom = 0;
+    while (searchFrom < line.text.length) {
+      const idx = line.text.indexOf('xref:', searchFrom);
+      if (idx === -1) break;
+      const pathStart = idx + 'xref:'.length;
+      const endIdx = line.text.indexOf('[', pathStart);
+      if (endIdx > pathStart) {
+        builder.add(line.from + pathStart, line.from + endIdx, xrefDeco);
+      }
+      searchFrom = pathStart;
+    }
+    // <<...>> 装饰
+    searchFrom = 0;
+    while (searchFrom < line.text.length) {
+      const idx = line.text.indexOf('<<', searchFrom);
+      if (idx === -1) break;
+      const endIdx = line.text.indexOf('>>', idx);
+      const commaIdx = line.text.indexOf(',', idx + 2);
+      if (endIdx > idx + 2) {
+        const refEnd = commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx;
+        builder.add(line.from + idx + 2, line.from + refEnd, xrefDeco);
+      }
+      searchFrom = endIdx > idx ? endIdx : idx + 2;
+    }
   }
   return builder.finish();
 }
 
 const includeLinkPlugin = ViewPlugin.fromClass(class {
-  constructor(view) { this.decorations = buildIncludeDecorations(view.state); }
+  constructor(view) { this.decorations = buildLinkDecorations(view.state); }
   update(update) {
-    if (update.docChanged) this.decorations = buildIncludeDecorations(update.state);
+    if (update.docChanged) this.decorations = buildLinkDecorations(update.state);
   }
 }, {
   decorations: v => v.decorations,
@@ -142,9 +169,15 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
       this.decorations.between(pos, pos, () => { clicked = true; });
       if (!clicked) return;
 
-      // 根据点击位置定位 include 路径（避免同行多个 include 时匹配错误）
       const line = view.state.doc.lineAt(pos);
       const col = pos - line.from;
+      const currentPath = editorState.activeFilePath;
+      const wsRoot = editorState.workspaceRoot;
+      const baseDir = currentPath
+        ? currentPath.substring(0, currentPath.lastIndexOf('/'))
+        : wsRoot || '';
+
+      // include:: 跳转
       let searchFrom = 0;
       while (searchFrom < line.text.length) {
         const idx = line.text.indexOf('include::', searchFrom);
@@ -152,20 +185,52 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
         const pathStart = idx + 'include::'.length;
         const bracketIdx = line.text.indexOf('[', pathStart);
         if (bracketIdx > pathStart && col >= pathStart && col <= bracketIdx) {
-          const includePath = line.text.slice(pathStart, bracketIdx);
+          const linkPath = line.text.slice(pathStart, bracketIdx);
           e.preventDefault();
-          const currentPath = editorState.activeFilePath;
-          const wsRoot = editorState.workspaceRoot;
-          const baseDir = currentPath
-            ? currentPath.substring(0, currentPath.lastIndexOf('/'))
-            : wsRoot || '';
-          const resolved = includePath.startsWith('/')
-            ? includePath
-            : (baseDir + '/' + includePath);
+          const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
           eventBus.emit('open-external-file', resolved);
           return;
         }
         searchFrom = pathStart;
+      }
+
+      // xref: 跳转
+      searchFrom = 0;
+      while (searchFrom < line.text.length) {
+        const idx = line.text.indexOf('xref:', searchFrom);
+        if (idx === -1) break;
+        const pathStart = idx + 'xref:'.length;
+        const endIdx = line.text.indexOf('[', pathStart);
+        if (endIdx > pathStart && col >= pathStart && col <= endIdx) {
+          const linkPath = line.text.slice(pathStart, endIdx).split('#')[0];
+          if (linkPath && !linkPath.startsWith('http')) {
+            e.preventDefault();
+            const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
+            eventBus.emit('open-external-file', resolved);
+          }
+          return;
+        }
+        searchFrom = pathStart;
+      }
+
+      // <<...>> 跳转
+      searchFrom = 0;
+      while (searchFrom < line.text.length) {
+        const idx = line.text.indexOf('<<', searchFrom);
+        if (idx === -1) break;
+        const endIdx = line.text.indexOf('>>', idx);
+        const commaIdx = line.text.indexOf(',', idx + 2);
+        if (endIdx > idx + 2 && col >= idx + 2 && col <= (commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx)) {
+          const refEnd = commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx;
+          const linkPath = line.text.slice(idx + 2, refEnd).split('#')[0].trim();
+          if (linkPath && !linkPath.startsWith('http')) {
+            e.preventDefault();
+            const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
+            eventBus.emit('open-external-file', resolved);
+          }
+          return;
+        }
+        searchFrom = endIdx > idx ? endIdx : idx + 2;
       }
     }
   },
@@ -207,6 +272,79 @@ const ADOC_COMPLETIONS = [
 ];
 
 async function asciidocCompletions(context) {
+  // xref: 文件路径补全
+  const xrefMatch = context.matchBefore(/xref:[\w.\/\-#]*/);
+  if (xrefMatch) {
+    const pathPrefix = xrefMatch.text.slice('xref:'.length).split('#')[0];
+    const wsRoot = editorState.workspaceRoot;
+    if (wsRoot) {
+      const allFiles = await _getCachedAdocFiles(wsRoot);
+      const currentPath = editorState.activeFilePath;
+      const currentDir = currentPath
+        ? currentPath.substring(0, currentPath.lastIndexOf('/'))
+        : wsRoot;
+      const { linkIndex } = await import('../services/link-index.js');
+
+      const options = allFiles
+        .filter(abs => abs !== currentPath)
+        .map(abs => ({ abs, rel: _toRelativePath(currentDir, abs), title: linkIndex.getTitle(abs) }))
+        .filter(({ rel }) => rel.startsWith(pathPrefix))
+        .map(({ abs, rel, title }) => ({
+          label: rel,
+          type: 'file',
+          detail: title,
+          apply: (view, _cmp, from, to) => {
+            let end = to;
+            const line = view.state.doc.lineAt(to);
+            const after = line.text.slice(to - line.from);
+            const leftover = after.match(/^[\w.\/\-#]*\[/);
+            if (leftover) end = to + leftover[0].length;
+            view.dispatch({
+              changes: { from, to: end, insert: rel + '[' },
+              selection: { anchor: from + rel.length + 1 },
+            });
+          },
+        }));
+      if (options.length > 0) {
+        return { from: xrefMatch.from + 'xref:'.length, options, validFor: /^[\w.\/\-#]*$/ };
+      }
+    }
+  }
+
+  // << 文件路径补全
+  const angleMatch = context.matchBefore(/<<[\w.\/\-#]*/);
+  if (angleMatch) {
+    const pathPrefix = angleMatch.text.slice('<<'.length).split('#')[0];
+    const wsRoot = editorState.workspaceRoot;
+    if (wsRoot && pathPrefix.length > 0) {
+      const allFiles = await _getCachedAdocFiles(wsRoot);
+      const currentPath = editorState.activeFilePath;
+      const currentDir = currentPath
+        ? currentPath.substring(0, currentPath.lastIndexOf('/'))
+        : wsRoot;
+      const { linkIndex } = await import('../services/link-index.js');
+
+      const options = allFiles
+        .filter(abs => abs !== currentPath)
+        .map(abs => ({ abs, rel: _toRelativePath(currentDir, abs), title: linkIndex.getTitle(abs) }))
+        .filter(({ rel }) => rel.startsWith(pathPrefix))
+        .map(({ rel, title }) => ({
+          label: rel,
+          type: 'file',
+          detail: title,
+          apply: (view, _cmp, from, to) => {
+            view.dispatch({
+              changes: { from, to, insert: rel + '>>' },
+              selection: { anchor: from + rel.length + 2 },
+            });
+          },
+        }));
+      if (options.length > 0) {
+        return { from: angleMatch.from + '<<'.length, options, validFor: /^[\w.\/\-#]*$/ };
+      }
+    }
+  }
+
   // include:: 文件路径补全
   const includeMatch = context.matchBefore(/include::[\w.\/\-]*/);
   if (includeMatch) {
@@ -619,7 +757,7 @@ class EditorPane extends LitElement {
         this._currentPath = savePath;
         editorState.openFile(savePath, content);
         editorState.markSaved(savePath);
-        eventBus.emit('file-saved', savePath);
+        eventBus.emit('file-saved', { path: savePath, content });
         if (editorState.workspaceRoot) eventBus.emit('workspace-opened', editorState.workspaceRoot);
         this._fileMtime = await getFileMtime(savePath).catch(() => null);
       } catch (e) {
@@ -631,7 +769,7 @@ class EditorPane extends LitElement {
     try {
       await writeFile(this._currentPath, content);
       editorState.markSaved(this._currentPath);
-      eventBus.emit('file-saved', this._currentPath);
+      eventBus.emit('file-saved', { path: this._currentPath, content });
       this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
     } catch (e) {
       console.error('保存失败:', e);

@@ -1,0 +1,46 @@
+// 链接命令详情
+
+[[build-link-index]]
+=== build_link_index
+
+*参数*: `workspace_root: String`
+*返回*: `Result<Vec<LinkEntry>, String>`
+
+递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt` 文件，解析其中的链接引用（`xref:`、`<<>>`、`include::`），构建正向链接索引。跳过以 `.` 开头的隐藏目录和文件。
+
+*LinkEntry 结构*:
+[source,rust]
+----
+pub struct LinkEntry {
+    pub source: String,   // 来源文件路径
+    pub target: String,   // 目标文件路径（已解析为绝对路径）
+    pub anchor: Option<String>,  // 锚点（如 #section-id）
+    pub line: usize,      // 链接所在行号
+}
+----
+
+[[get-files-meta]]
+=== get_files_meta
+
+*参数*: `workspace_root: String`
+*返回*: `Result<Vec<FileMeta>, String>`
+
+获取工作区内所有文件的元数据（标题 + 关键词）。标题从文件前 10 行中提取 `= ` 标题行；关键词从 `:keywords:` 属性解析。用于知识图谱节点标注和标签系统。
+
+*FileMeta 结构*:
+[source,rust]
+----
+pub struct FileMeta {
+    pub path: String,        // 文件路径
+    pub title: String,       // 文档标题
+    pub keywords: Vec<String>,  // 关键词列表
+}
+----
+
+[[get-backlinks]]
+=== get_backlinks
+
+*参数*: `file_path: String, workspace_root: String`
+*返回*: `Result<Vec<LinkEntry>, String>`
+
+查询指定文件的反向链接——所有引用了该文件的其他文件。扫描工作区内除目标文件外的所有文件，返回匹配的 `LinkEntry` 列表。用于反向链接面板。

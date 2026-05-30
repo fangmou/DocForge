@@ -108,3 +108,14 @@ pub struct FileEntry {
 *返回*: `Result<Vec<String>, String>`
 
 递归列出指定目录下所有 `.adoc`/`.asciidoc`/`.txt` 文件的完整路径。跳过 `.` 开头的隐藏目录和文件。用于 `include::` 指令的文件路径补全——前端缓存文件列表，输入 `include::` 时展示工作区内可选文档。
+
+[[reveal-in-shell]]
+=== reveal_in_shell
+
+*参数*: `path: String`
+*返回*: `Result<(), String>`
+
+在系统文件管理器中显示指定文件。平台特定实现：
+- Linux: `xdg-open <dir>`
+- macOS: `open -R <path>`
+- Windows: `explorer /select,<path>`

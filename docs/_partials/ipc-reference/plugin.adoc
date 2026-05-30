@@ -1,0 +1,39 @@
+// 插件命令详情
+
+[[list-plugins]]
+=== list_plugins
+
+*参数*: `workspace_root: String`
+*返回*: `Result<Vec<PluginInfo>, String>`
+
+扫描 `.docforge/plugins/` 目录下的所有插件，读取每个子目录中的 `plugin.json` 清单文件。返回插件列表（ID、名称、版本、描述、扩展点、是否启用）。
+
+*PluginInfo 结构*:
+[source,rust]
+----
+pub struct PluginInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub extension_points: Vec<String>,
+    pub enabled: bool,
+    pub dir: String,  // 插件目录路径
+}
+----
+
+[[read-plugin-file]]
+=== read_plugin_file
+
+*参数*: `path: String`
+*返回*: `Result<String, String>`
+
+读取插件目录内的文件内容（如 `index.js`）。用于前端沙箱加载插件代码。
+
+[[toggle-plugin]]
+=== toggle_plugin
+
+*参数*: `workspace_root: String, plugin_id: String, enabled: bool`
+*返回*: `Result<(), String>`
+
+启用或禁用指定插件。状态持久化到 `.docforge/plugins/_state.json`。

@@ -23,16 +23,21 @@
 │  ai-panel / toolbar / tab-bar / status       │
 │  search-panel / outline-panel / context-menu │
 │  template-panel / settings-dialog            │
+│  backlinks-panel / tags-panel / graph-view   │
+│  plugin-manager-panel                        │
 ├─────────────────────────────────────────────┤
 │           服务层 (JS Services)                │
 │  file-service / ai-service / event-bus       │
 │  editor-state / search-service               │
 │  export-service / config-service / i18n      │
-│  asciidoc-attrs (渲染参数合并)                │
-│  scroll-sync (滚动同步直接调用)               │
+│  asciidoc-attrs / scroll-sync                │
+│  link-index (双向链接+标签索引)               │
+│  graph-layout (力导向图谱布局)               │
+│  plugin-loader / plugin-registry (插件系统)  │
 ├──────────────────── Tauri IPC ───────────────┤
 │           命令层 (Rust Commands)              │
 │  file / ai / search / export / config        │
+│  link / plugin                               │
 ├─────────────────────────────────────────────┤
 │           服务层 (Rust Services)              │
 │  ai_client (reqwest + rustls)                │

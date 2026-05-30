@@ -22,6 +22,8 @@ const icons = {
   moon: svg`<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>`,
   chevron: svg`<path d="M6 9l6 6 6-6"/>`,
   template: svg`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>`,
+  link: svg`<path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>`,
+  graph: svg`<circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="19" r="3"/><path d="M7.5 8l3 7.5M16.5 8l-3 7.5"/>`,
 };
 
 function icon(name, cls = 'ic') {
@@ -190,6 +192,7 @@ class ToolbarMain extends LitElement {
       'search-panel-toggled': (v) => { this._activePanel = v ? 'search' : (this._activePanel === 'search' ? '' : this._activePanel); },
       'outline-panel-toggled': (v) => { this._activePanel = v ? 'outline' : (this._activePanel === 'outline' ? '' : this._activePanel); },
       'template-panel-toggled': (v) => { this._activePanel = v ? 'template' : (this._activePanel === 'template' ? '' : this._activePanel); },
+      'backlinks-panel-toggled': (v) => { this._activePanel = v ? 'backlinks' : (this._activePanel === 'backlinks' ? '' : this._activePanel); },
     };
     for (const [name, handler] of Object.entries(this._panelHandlers)) {
       eventBus.on(name, handler);
@@ -223,10 +226,17 @@ class ToolbarMain extends LitElement {
     // 如果不是关闭当前面板，则打开新面板
     if (!isClosing) {
       this._activePanel = panel;
-      if (panel === 'ai') this.dispatchEvent(new CustomEvent('toggle-ai'));
-      else if (panel === 'search') eventBus.emit('toggle-search');
-      else if (panel === 'outline') eventBus.emit('toggle-outline');
-      else if (panel === 'template') eventBus.emit('toggle-template-panel');
+      const eventMap = {
+        'ai': () => this.dispatchEvent(new CustomEvent('toggle-ai')),
+        'search': () => eventBus.emit('toggle-search'),
+        'outline': () => eventBus.emit('toggle-outline'),
+        'template': () => eventBus.emit('toggle-template-panel'),
+        'backlinks': () => eventBus.emit('toggle-backlinks'),
+        'graph': () => eventBus.emit('toggle-graph-view'),
+        'plugin': () => eventBus.emit('toggle-plugin-manager'),
+        'tags': () => eventBus.emit('toggle-tags-panel'),
+      };
+      if (eventMap[panel]) eventMap[panel]();
     }
   }
 
@@ -282,6 +292,15 @@ class ToolbarMain extends LitElement {
         <button class="${this._activePanel === 'ai' ? 'on' : ''}"
                 title="${t('toolbar.toggleAI')}"
                 @click=${() => this._togglePanel('ai')}>${icon('sparkles')}</button>
+        <button class="${this._activePanel === 'backlinks' ? 'on' : ''}"
+                title="${t('toolbar.toggleBacklinks')}"
+                @click=${() => this._togglePanel('backlinks')}>${icon('link')}</button>
+        <button class="${this._activePanel === 'graph' ? 'on' : ''}"
+                title="${t('toolbar.toggleGraph')}"
+                @click=${() => this._togglePanel('graph')}>${icon('graph')}</button>
+        <button class="${this._activePanel === 'tags' ? 'on' : ''}"
+                title="${t('toolbar.toggleTags')}"
+                @click=${() => this._togglePanel('tags')}>🏷</button>
       </div>
 
       <div class="sep"></div>
@@ -297,6 +316,9 @@ class ToolbarMain extends LitElement {
       <div class="spacer"></div>
 
       <!-- 右侧 -->
+      <button class="${this._activePanel === 'plugin' ? 'on' : ''}"
+              title="${t('toolbar.togglePluginManager')}"
+              @click=${() => this._togglePanel('plugin')}>🧩</button>
       <button title="${t('toolbar.openSettings')}" @click=${() => this.dispatchEvent(new CustomEvent('open-settings'))}>${icon('settings')}</button>
       <button class="theme-btn" @click=${this._toggleTheme}>
         ${this._theme === 'dark' ? icon('moon') : icon('sun')}

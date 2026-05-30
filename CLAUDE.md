@@ -13,10 +13,10 @@
 
 ## 关键目录
 
-- `src/components/` — Lit Web Components（app-shell, editor-pane, preview-pane, ai-panel 等）
-- `src/services/` — 前端服务层（file-service, ai-service, event-bus, editor-state, i18n, asciidoc-attrs）
+- `src/components/` — Lit Web Components（app-shell, editor-pane, preview-pane, ai-panel, backlinks-panel, tags-panel, graph-view, plugin-manager-panel 等）
+- `src/services/` — 前端服务层（file-service, ai-service, event-bus, editor-state, i18n, asciidoc-attrs, link-index, graph-layout, plugin-loader, plugin-registry）
 - `src/i18n/` — 语言包文件（zh.json, en.json），新增语言只需加 JSON
-- `src-tauri/src/commands/` — Tauri IPC 命令（file.rs, ai.rs, config.rs, export.rs, search.rs）
+- `src-tauri/src/commands/` — Tauri IPC 命令（file.rs, ai.rs, config.rs, export.rs, search.rs, link.rs, plugin.rs）
 - `src-tauri/src/services/` — Rust 业务逻辑（ai_client.rs）
 
 ## 开发命令

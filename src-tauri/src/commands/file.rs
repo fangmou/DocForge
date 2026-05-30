@@ -211,3 +211,34 @@ pub async fn pick_save_file(
     .map_err(|e| format!("选择路径失败: {}", e))?;
     Ok(path.map(|p| p.to_string()))
 }
+
+/// 在系统文件管理器中显示文件
+#[tauri::command]
+pub async fn reveal_in_shell(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err("文件不存在".into());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        tokio::process::Command::new("xdg-open")
+            .arg(p.parent().unwrap_or(p))
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        tokio::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tokio::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    Ok(())
+}

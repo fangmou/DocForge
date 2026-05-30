@@ -54,8 +54,8 @@ class ContextMenu extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._showHandler = ({ x, y, items }) => {
-      this.x = x;
-      this.y = y;
+      this.style.left = x + 'px';
+      this.style.top = y + 'px';
       this.items = items;
       this.visible = true;
     };
@@ -74,13 +74,17 @@ class ContextMenu extends LitElement {
 
   _onAction(action) {
     this.visible = false;
-    eventBus.emit('context-menu-action', action);
+    if (typeof action === 'function') {
+      action();
+    } else {
+      eventBus.emit('context-menu-action', action);
+    }
   }
 
   render() {
     if (!this.visible) return '';
     return html`
-      <div class="menu" style="left:${this.x}px; top:${this.y}px" @click=${(e) => e.stopPropagation()}>
+      <div class="menu" @click=${(e) => e.stopPropagation()}>
         ${this.items.map((item) => item.separator
           ? html`<div class="separator"></div>`
           : html`<div class="item" @click=${() => this._onAction(item.action)}>${item.icon || ''} ${item.label}</div>`

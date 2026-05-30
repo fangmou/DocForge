@@ -151,5 +151,42 @@
   "msg.renameFailed": "Rename failed:",
   "msg.createFileFailed": "Failed to create file:",
   "msg.createDirFailed": "Failed to create folder:",
-  "msg.renderError": "Render error: {error}"
+  "msg.renderError": "Render error: {error}",
+
+  "toolbar.toggleBacklinks": "Backlinks",
+  "toolbar.toggleGraph": "Knowledge Graph",
+  "toolbar.togglePluginManager": "Plugin Manager",
+  "toolbar.toggleTags": "Tags",
+
+  "tab.close": "Close",
+  "tab.closeOthers": "Close Others",
+  "tab.closeAll": "Close All",
+  "tab.copyPath": "Copy Path",
+  "tab.revealInShell": "Reveal in File Manager",
+
+  "backlinks.title": "Backlinks",
+  "backlinks.empty": "No backlinks",
+
+  "tags.title": "Tags",
+  "tags.empty": "Add tags with :keywords: attribute",
+  "tags.noFiles": "No files with this tag",
+
+  "graph.title": "Knowledge Graph",
+  "graph.filterPlaceholder": "Filter nodes...",
+  "graph.nodeCount": "nodes",
+  "graph.edgeCount": "edges",
+
+  "plugin.title": "Plugin Manager",
+  "plugin.empty": "Place plugins in .docforge/plugins/ directory",
+  "plugin.dirHint": "Plugin directory: .docforge/plugins/",
+
+  "outline.expandAll": "Expand All",
+  "outline.collapseAll": "Collapse All",
+  "outline.filterPlaceholder": "Filter headings...",
+
+  "search.regex": "Regex",
+  "search.replace": "Replace",
+  "search.replacePlaceholder": "Replace with...",
+  "search.replaceAll": "Replace All",
+  "search.replaceOne": "Replace"
 }

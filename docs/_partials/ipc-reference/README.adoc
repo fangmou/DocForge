@@ -15,6 +15,7 @@
 | `rename_file` | 重命名文件 | link:file.adoc#rename-file[查看]
 | `get_file_mtime` | 获取文件修改时间 | link:file.adoc#get-file-mtime[查看]
 | `list_all_adoc_files` | 递归列出所有 AsciiDoc 文件 | link:file.adoc#list-all-adoc-files[查看]
+| `reveal_in_shell` | 在文件管理器中显示 | link:file.adoc#reveal-in-shell[查看]
 | `stream_chat_completion` | AI流式对话 | link:ai.adoc#stream-chat-completion[查看]
 | `test_ai_connection` | 测试AI连接 | link:ai.adoc#test-ai-connection[查看]
 | `save_ai_config` | 保存AI配置 | link:config.adoc#save-ai-config[查看]
@@ -38,6 +39,12 @@
 | `get_current_workspace` | 获取当前工作区 | link:config.adoc#get-current-workspace[查看]
 | `get_recent_workspaces` | 获取最近工作区列表 | link:config.adoc#get-recent-workspaces[查看]
 | `clear_recent_workspaces` | 清空最近工作区 | link:config.adoc#clear-recent-workspaces[查看]
+| `build_link_index` | 构建链接索引 | link:link.adoc#build-link-index[查看]
+| `get_files_meta` | 获取文件元数据 | link:link.adoc#get-files-meta[查看]
+| `get_backlinks` | 查询反向链接 | link:link.adoc#get-backlinks[查看]
+| `list_plugins` | 列出插件 | link:plugin.adoc#list-plugins[查看]
+| `read_plugin_file` | 读取插件文件 | link:plugin.adoc#read-plugin-file[查看]
+| `toggle_plugin` | 启用/禁用插件 | link:plugin.adoc#toggle-plugin[查看]
 |===
 
 include::file.adoc[]
@@ -49,3 +56,7 @@ include::search.adoc[]
 include::export.adoc[]
 
 include::config.adoc[]
+
+include::link.adoc[]
+
+include::plugin.adoc[]

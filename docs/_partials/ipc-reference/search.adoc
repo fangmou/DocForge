@@ -3,10 +3,12 @@
 [[search-files]]
 === search_files
 
-*参数*: `directory: String, query: String, case_sensitive: Option<bool>`
+*参数*: `directory: String, query: String, case_sensitive: Option<bool>, use_regex: Option<bool>`
 *返回*: `Result<Vec<SearchResult>, String>`
 
 递归搜索目录下的文本文件（`.adoc`, `.asc`, `.txt`, `.md`, `.rst`, `.html`, `.css`, `.js`, `.ts`, `.json`, `.toml`, `.yaml`, `.yml`, `.rs`, `.py`, `.go`, `.java`, `.sh`），返回匹配行信息，最多 500 条结果。
+
+当 `use_regex` 为 `true` 时，`query` 作为正则表达式处理（使用 Rust `regex` crate）；否则作为纯文本搜索。
 
 *SearchResult 结构*:
 [source,rust]
@@ -16,6 +18,8 @@ pub struct SearchResult {
     pub line: usize,
     pub col: usize,
     pub text: String,
+    pub match_start: usize,  // 匹配起始列（正则模式）
+    pub match_end: usize,    // 匹配结束列（正则模式）
 }
 ----
 
