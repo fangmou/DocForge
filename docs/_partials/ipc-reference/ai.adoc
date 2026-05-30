@@ -1,0 +1,33 @@
+// AI 命令详情
+
+[[stream-chat-completion]]
+=== stream_chat_completion
+
+*参数*: `prompt: String, system_prompt: Option<String>`
+*返回*: `Result<String, String>`
+
+向配置的 OpenAI 兼容 API 发送 SSE 流式请求，使用 reqwest `bytes_stream` 逐块读取，每解析到一个 token 立即通过 Tauri 事件推送到前端。
+
+*事件流*:
+- `ai-stream-chunk { kind: "token", content: "..." }` — 每个 token
+- `ai-stream-chunk { kind: "done", content: "完整响应" }` — 完成
+- `ai-stream-chunk { kind: "error", content: "错误信息" }` — 出错
+
+*前端监听示例*:
+[source,javascript]
+----
+const { listen } = window.__TAURI__.event;
+await listen('ai-stream-chunk', (event) => {
+    const { kind, content } = event.payload;
+});
+----
+
+[[test-ai-connection]]
+=== test_ai_connection
+
+*参数*: 无（从 AppState 读取配置）
+*返回*: `Result<bool, String>`
+
+测试当前 AI API 配置是否可用。请求 `GET {endpoint}/v1/models`。
+
+NOTE: AI 配置的保存/加载命令（`save_ai_config`、`load_ai_config`）已迁移到 link:config.adoc[配置命令模块]。

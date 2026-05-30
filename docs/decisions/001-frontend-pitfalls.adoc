@@ -1,0 +1,79 @@
+// 踩坑记录：前端白屏与运行时陷阱
+// 2026-05-28
+
+== Lit Web Components 必须显式 import
+
+*症状*: 页面空白，控制台无报错。
+*原因*: `main.js` 只 import 了 `app-shell.js`。Lit Custom Elements 不会自动发现和加载子组件——`<toolbar-main>` 等标签必须在某处 import 对应模块才会注册，否则浏览器将其视为未知 HTML 元素，不渲染。
+*规则*: `main.js` 必须显式 import 所有组件文件，`app-shell.js` 放最后（依赖其他组件先注册）。
+
+== `unsafeHTML` 导入路径
+
+*错误*: `import { unsafeHTML } from 'lit'` — Rollup 构建报 "unsafeHTML is not exported"。
+*正确*: `import { unsafeHTML } from 'lit/directives/unsafe-html.js'`。
+
+== Tauri API 不能在模块顶层解构
+
+*症状*: 浏览器访问 dev server 白屏。
+*原因*: `const { invoke } = window.__TAURI__.core` 在模块加载时执行。浏览器中 `window.__TAURI__` 不存在，解构抛 TypeError，整个模块链崩溃。
+*正确*: `const invoke = () => window.__TAURI__.core.invoke` — 延迟到调用时才获取。
+
+== WSL2 WebKitGTK DMABUF 渲染器不兼容
+
+*症状*: WSL2 中 Tauri 窗口空白（不报错）。
+*原因*: WebKitGTK 默认使用 DMABUF 渲染器，与 WSLg 的 GPU 透传不兼容。
+*修复*: `WEBKIT_DISABLE_DMABUF_RENDERER=1` 环境变量。Makefile 的 `dev` 目标已内置此变量。
+
+== Rust 字符串按字节截断会 panic
+
+*错误*: `&line[..200]` — 当 200 不是 UTF-8 字符边界时 panic（中文必现）。
+*正确*: `line.chars().take(200).collect::<String>()`。
+
+== CodeMirror `setState` 丢失 Compartment 绑定
+
+*症状*: 编辑器内容切换后滚动失效、主题/换行设置失灵。
+*原因*: `view.setState(EditorState.create({...}))` 完全重建状态，Compartment（themeCompartment、wrapCompartment）的 slot 不会随 `state.facet(EditorState.extensions)` 迁移。
+*正确*: 用 `view.dispatch({ changes: { from: 0, to: doc.length, insert: content } })` 替换文档内容，保留原有扩展配置。
+
+== CodeMirror 编辑器容器必须有固定高度
+
+*症状*: 编辑器内容超出视口但无法滚动。
+*原因*: 包裹 EditorView 的 `div` 没有设置 `height:100%; overflow:hidden`，它会随内容撑开，导致 CodeMirror 内部滚动机制失效。
+*正确*: container 加 `style="height:100%;overflow:hidden;"`，配合 `.cm-editor { height:100% }` 和 `.cm-scroller { overflow:auto }`。
+
+== EventBus 事件无人监听 = 静默失败
+
+*症状*: 右键菜单点击操作后无反应，无报错。
+*原因*: `context-menu` 组件发射了 `context-menu-action` 事件，但 `sidebar-filetree` 没有注册监听器。EventBus 基于浏览器 CustomEvent，没有消费者时不会报错。
+*规则*: 新增事件发射时，立即确认接收方已注册监听。可搜索 `eventBus.emit` 和 `eventBus.on` 对照检查。
+
+== Shadow DOM 内元素无法被 document.querySelector 找到
+
+*症状*: AI 面板取不到编辑器选中文本。
+*原因*: `document.querySelector('editor-pane')` 无法穿透 Lit Web Components 的 shadowRoot。所有组件都在 `app-shell` 的 shadow DOM 内。
+*正确*: `document.querySelector('app-shell').shadowRoot.querySelector('editor-pane')`，或通过 EventBus 传递数据。
+
+== 对象 vs 字符串：editorState.getActiveFile() 返回值
+
+*症状*: PDF 导出按钮点击无反应（静默失败）。
+*原因*: `getActiveFile()` 返回 `{ path, content, isDirty, ... }` 对象，但 `exportToPdf()` 期望 `sourcePath: String`。Rust 端 Tauri 反序列化失败返回 Error，前端 catch 后只 console.error。
+*规则*: 传 IPC 参数前确认类型匹配。`getActiveFile()` 返回对象，取 `.path` 得到字符串。
+
+== CSS class 不能以数字开头
+
+*症状*: 大纲面板一级标题样式不生效。
+*原因*: `class="heading level-1"` — CSS 选择器 `.level-1` 合法，但生成方式 `level-${h.level}` 可能产生其他问题。更关键的是 Lit 模板中动态 class 拼接 `level-${n}` 在 CSS 里匹配需注意。
+*正确*: 使用 `heading-l1` 等不以数字开头的 class 命名。
+
+== 文件树操作后必须直接刷新 + 同步编辑器状态
+
+*症状*: 文件树右键删除/重命名后，文件树和标签页仍显示旧条目，但磁盘文件已变。
+*原因*:
+1. `_refresh()` 通过 `eventBus.emit('workspace-opened')` 间接触发 `_loadDir()`，事件链路长且没人 `await`，刷新可能丢失。
+2. 删除/重命名没有同步 `editorState` 中对应的文件条目和编辑器 `_currentPath`。
+*正确*:
+- `_refresh()` 直接 `await this._loadDir(this.rootPath)`，不走事件总线。
+- 删除后调用 `editorState.closeFile(path)` 关闭标签。
+- 重命名后手动迁移 `editorState.files` 中的 key，并更新编辑器 `_currentPath`。
+- 编辑器监听 `file-closed` / `file-renamed` 事件做对应处理。
+*规则*: 涉及文件系统变更的操作（增删改），必须同步更新三处：磁盘、editorState、UI 组件。任何一环遗漏都会导致状态不一致。

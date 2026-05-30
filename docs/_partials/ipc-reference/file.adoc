@@ -1,0 +1,110 @@
+// 文件操作命令详情
+
+[[read-file]]
+=== read_file
+
+*参数*: `path: String`
+*返回*: `Result<String, String>`
+
+异步读取指定路径文件的全部文本内容。
+
+[[write-file]]
+=== write_file
+
+*参数*: `path: String, content: String`
+*返回*: `Result<(), String>`
+
+将内容写入文件。自动创建不存在的父目录。
+
+[[list-directory]]
+=== list_directory
+
+*参数*: `path: String`
+*返回*: `Result<Vec<FileEntry>, String>`
+
+列出目录顶层内容（深度1层），返回树形结构。
+子目录的 `children` 为 `None`，由前端按需调用 `list_sub_directory` 加载。
+跳过以 `.` 开头的隐藏文件。目录排前面，按名称排序。
+
+*FileEntry 结构*:
+[source,rust]
+----
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub children: Option<Vec<FileEntry>>,
+}
+----
+
+[[list-sub-directory]]
+=== list_sub_directory
+
+*参数*: `path: String`
+*返回*: `Result<Vec<FileEntry>, String>`
+
+按需加载指定子目录的顶层内容（深度1层）。用于文件树懒加载——用户展开目录时才请求子项，避免一次性递归加载整个目录树。
+
+[[pick-directory]]
+=== pick_directory
+
+*参数*: 无（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统目录选择对话框，返回用户选择的目录路径。在独立线程中执行避免阻塞异步运行时。
+
+[[create-file]]
+=== create_file
+
+*参数*: `path: String`
+*返回*: `Result<(), String>`
+
+创建一个空文件。
+
+[[create-dir]]
+=== create_dir
+
+*参数*: `path: String`
+*返回*: `Result<(), String>`
+
+递归创建目录（含所有不存在的父目录）。右键菜单"新建文件夹"使用。
+
+[[delete-file]]
+=== delete_file
+
+*参数*: `path: String`
+*返回*: `Result<(), String>`
+
+删除文件或目录。先尝试删除文件，失败则递归删除目录（避免 TOCTOU 竞态）。
+
+[[rename-file]]
+=== rename_file
+
+*参数*: `old_path: String, new_path: String`
+*返回*: `Result<(), String>`
+
+重命名/移动文件。
+
+[[pick-save-file]]
+=== pick_save_file
+
+*参数*: `file_name: String`（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统保存文件对话框，预填文件名，限制为 `.adoc`/`.asciidoc`/`.txt` 格式。用于新建文件保存（"另存为"）。在独立线程中执行。
+
+[[get-file-mtime]]
+=== get_file_mtime
+
+*参数*: `path: String`
+*返回*: `Result<u64, String>`
+
+获取文件最后修改时间，返回毫秒级 Unix 时间戳。用于检测外部文件修改——编辑器获得焦点时比对 mtime，若变化则提示用户重新加载。
+
+[[list-all-adoc-files]]
+=== list_all_adoc_files
+
+*参数*: `path: String`
+*返回*: `Result<Vec<String>, String>`
+
+递归列出指定目录下所有 `.adoc`/`.asciidoc`/`.txt` 文件的完整路径。跳过 `.` 开头的隐藏目录和文件。用于 `include::` 指令的文件路径补全——前端缓存文件列表，输入 `include::` 时展示工作区内可选文档。

@@ -1,0 +1,22 @@
+// 搜索命令详情
+
+[[search-files]]
+=== search_files
+
+*参数*: `directory: String, query: String, case_sensitive: Option<bool>`
+*返回*: `Result<Vec<SearchResult>, String>`
+
+递归搜索目录下的文本文件（`.adoc`, `.asc`, `.txt`, `.md`, `.rst`, `.html`, `.css`, `.js`, `.ts`, `.json`, `.toml`, `.yaml`, `.yml`, `.rs`, `.py`, `.go`, `.java`, `.sh`），返回匹配行信息，最多 500 条结果。
+
+*SearchResult 结构*:
+[source,rust]
+----
+pub struct SearchResult {
+    pub path: String,
+    pub line: usize,
+    pub col: usize,
+    pub text: String,
+}
+----
+
+跳过以 `.` 开头的隐藏目录和文件。

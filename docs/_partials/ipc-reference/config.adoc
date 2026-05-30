@@ -1,0 +1,181 @@
+// 配置命令详情
+// 所有配置命令在 save 时自动持久化到磁盘（{app_config_dir}/docforge-config.json），
+// 启动时由 lib.rs setup 调用 load_config_from_disk 恢复。
+
+[[save-ai-config]]
+=== save_ai_config
+
+*参数*: `config: AiConfig`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存 AI 配置并持久化到磁盘。AiConfig 结构：
+
+[source,rust]
+----
+pub struct AiConfig {
+    pub endpoint: String,    // API 端点，如 "https://api.openai.com"
+    pub api_key: String,     // API 密钥
+    pub model: String,       // 模型名，如 "gpt-4o"
+    pub max_tokens: u32,     // 最大生成 token 数
+    pub temperature: f32,    // 温度参数
+}
+----
+
+[[load-ai-config]]
+=== load_ai_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<AiConfig, String>`
+
+从内存 AppState 加载当前 AI 配置。
+
+[[save-editor-config]]
+=== save_editor_config
+
+*参数*: `config: EditorConfig`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存编辑器配置并持久化到磁盘。EditorConfig 结构：
+
+```
+{
+  font_size: u32,           // 编辑器字号 (px)，默认 14
+  tab_size: u32,            // Tab 宽度，默认 4
+  theme: String,            // 主题名称 "light" | "dark"
+  word_wrap: bool,          // 自动换行，默认 false
+  auto_save_interval: u32   // 自动保存间隔(ms)，默认 3000
+  language: String          // 界面语言 "zh" | "en"，默认 "zh"
+}
+```
+
+*language 说明*: 控制界面语言和 Asciidoctor 渲染参数。中文时自动注入 `toc-title=目录`、`table-caption=表`、`figure-caption=图`、`example-caption=例`、`lang=zh_CN`。语言包文件位于 `src/i18n/{lang}.json`，新增语言只需添加 JSON 文件。
+
+=== save_editor_config
+
+*参数*: `config: EditorConfig`（使用 AppState）
+*返回*: `Result<(), String>`
+
+保存编辑器配置到内存 AppState。EditorConfig 结构：
+
+```
+{
+  font_size: u32,           // 编辑器字号 (px)，默认 14
+  tab_size: u32,            // Tab 宽度，默认 4
+  theme: String,            // 主题名称 "light" | "dark"
+  word_wrap: bool,          // 自动换行，默认 false
+  auto_save_interval: u32   // 自动保存间隔(ms)，默认 3000
+  language: String          // 界面语言 "zh" | "en"，默认 "zh"
+}
+```
+
+[[load-editor-config]]
+=== load_editor_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<EditorConfig, String>`
+
+从内存加载当前编辑器配置。启动时由 editor-pane 调用以恢复用户偏好。
+
+[[save-pdf-config]]
+=== save_pdf_config
+
+*参数*: `config: PdfConfig`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存导出配置并持久化到磁盘（HTML/PDF 共用）。PdfConfig 结构：
+
+```
+{
+  command_path: String,     // asciidoctor-pdf 命令路径，默认 "asciidoctor-pdf"
+  output_dir: String,       // 输出目录（HTML/PDF 共用），空则源文件同目录
+  output_naming: String,    // 输出文件名规则 "stem" | "title"，默认 "title"
+  enable_diagram: bool,     // 启用 asciidoctor-diagram（PlantUML/Mermaid 等），默认 false
+  extra_args: String,       // 用户自定义额外 CLI 参数（如 "-a toc"），默认空
+  theme: String,            // PDF 主题文件
+  page_size: String,        // 页面大小，默认 "A4"
+  fonts_dir: String,        // 字体目录
+  footer_center: String,    // 页脚居中文本
+  cover_image: String       // 封面图片路径
+}
+```
+
+*output_naming 说明*:
+- `"stem"` — 使用源文件名（guide.adoc → guide.html/pdf）
+- `"title"` — 使用文档标题（`= 我的文档` → 我的文档.html/pdf），无标题回退到源文件名。标题中空格自动替换为下划线。
+
+NOTE: 这些是全局默认值。adoc 文件头属性（如 `:pdf-theme:`）优先级更高。
+
+[[load-pdf-config]]
+=== load_pdf_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<PdfConfig, String>`
+
+加载当前 PDF 导出配置。
+
+[[add-recent-file]]
+=== add_recent_file
+
+*参数*: `path: String`（使用 AppState）
+*返回*: `Result<(), String>`
+
+添加文件到最近文件列表。自动去重（已有则移到队首），最多保留 20 条。每次打开文件时 fire-and-forget 调用。
+
+[[get-recent-files]]
+=== get_recent_files
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<Vec<RecentFile>, String>`
+
+获取最近文件列表。RecentFile 结构：`{ path: String, opened_at: u64 }`，`opened_at` 为 UNIX 时间戳（秒）。
+
+[[clear-recent-files]]
+=== clear_recent_files
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<(), String>`
+
+清空最近文件列表。
+
+== 工作区管理
+
+AppConfig 中新增字段：
+
+```
+{
+  current_workspace: String,          // 当前工作区路径，启动时自动恢复
+  recent_workspaces: Vec<RecentFile>  // 最近工作区列表（去重，保留 10 条）
+}
+```
+
+[[set-current-workspace]]
+=== set_current_workspace
+
+*参数*: `path: String`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+设置当前工作区路径并持久化。同时将该路径加入最近工作区列表（去重、移到队首、保留 10 条）。每次打开或切换目录时调用。
+
+[[get-current-workspace]]
+=== get_current_workspace
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<String, String>`
+
+获取当前工作区路径。启动时由 app-shell 调用以恢复上次工作区。空字符串表示无工作区。
+
+[[get-recent-workspaces]]
+=== get_recent_workspaces
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<Vec<RecentFile>, String>`
+
+获取最近工作区列表。侧栏顶栏下拉菜单和 Ctrl+Alt+1~9 快捷键使用此列表。
+
+[[clear-recent-workspaces]]
+=== clear_recent_workspaces
+
+*参数*: 无（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+清空最近工作区列表并持久化。

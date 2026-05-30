@@ -1,0 +1,15 @@
+// 方谋文构 (Fangmou DocForge) 入口
+import './app.css';
+import './components/toolbar-main.js';
+import './components/sidebar-filetree.js';
+import './components/tab-bar.js';
+import './components/editor-pane.js';
+import './components/preview-pane.js';
+import './components/ai-panel.js';
+import './components/search-panel.js';
+import './components/outline-panel.js';
+import './components/template-panel.js';
+import './components/context-menu.js';
+import './components/status-bar.js';
+import './components/settings-dialog.js';
+import './components/app-shell.js';

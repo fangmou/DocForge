@@ -1,0 +1,75 @@
+/* 方谋文构 (Fangmou DocForge) 全局样式 */
+:root {
+  /* 三层背景系统 */
+  --bg-1: #ffffff;
+  --bg-2: #fafafa;
+  --bg-3: #f3f3f3;
+  /* 三层文本系统 */
+  --text-1: #171717;
+  --text-2: #525252;
+  --text-3: #a3a3a3;
+  /* 边框 */
+  --border-subtle: #e5e5e5;
+  --border-medium: #d4d4d4;
+  /* 强调色 — 锻造金/熔岩橙 */
+  --accent: #c27418;
+  --accent-hover: #a86215;
+  /* 语义色 */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  /* 布局尺寸 */
+  --sidebar-width: 240px;
+  --toolbar-height: 40px;
+  --statusbar-height: 28px;
+  --tab-height: 36px;
+  /* 字体 */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Fira Code', 'Consolas', monospace;
+}
+
+[data-theme="dark"] {
+  /* 深空灰/墨黑背景 */
+  --bg-1: #0f0f12;
+  --bg-2: #16161b;
+  --bg-3: #1e1e25;
+  --text-1: #e8e6e3;
+  --text-2: #9a9590;
+  --text-3: #5e5a56;
+  --border-subtle: #28272e;
+  --border-medium: #3e3d44;
+  /* 熔岩橙/锻造金强调色 */
+  --accent: #e08a30;
+  --accent-hover: #f0a050;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-1);
+  background: var(--bg-1);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-medium);
+}

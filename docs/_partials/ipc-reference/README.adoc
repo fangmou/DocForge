@@ -1,0 +1,51 @@
+// IPC 命令概览
+// 修改命令时：在对应子文件中更新详情，同步更新本表格
+[cols="1,2,2a"]
+|===
+| 命令 | 说明 | 详情
+
+| `read_file` | 读取文件内容 | link:file.adoc#read-file[查看]
+| `write_file` | 写入文件内容 | link:file.adoc#write-file[查看]
+| `list_directory` | 列出顶层目录树 | link:file.adoc#list-directory[查看]
+| `list_sub_directory` | 按需加载子目录 | link:file.adoc#list-sub-directory[查看]
+| `pick_directory` | 弹窗选择目录 | link:file.adoc#pick-directory[查看]
+| `create_file` | 创建空文件 | link:file.adoc#create-file[查看]
+| `create_dir` | 创建目录（含父目录） | link:file.adoc#create-dir[查看]
+| `delete_file` | 删除文件或目录 | link:file.adoc#delete-file[查看]
+| `rename_file` | 重命名文件 | link:file.adoc#rename-file[查看]
+| `get_file_mtime` | 获取文件修改时间 | link:file.adoc#get-file-mtime[查看]
+| `list_all_adoc_files` | 递归列出所有 AsciiDoc 文件 | link:file.adoc#list-all-adoc-files[查看]
+| `stream_chat_completion` | AI流式对话 | link:ai.adoc#stream-chat-completion[查看]
+| `test_ai_connection` | 测试AI连接 | link:ai.adoc#test-ai-connection[查看]
+| `save_ai_config` | 保存AI配置 | link:config.adoc#save-ai-config[查看]
+| `load_ai_config` | 加载AI配置 | link:config.adoc#load-ai-config[查看]
+| `search_files` | 全文搜索 | link:search.adoc#search-files[查看]
+| `save_rendered_html` | 保存渲染HTML | link:export.adoc#save-rendered-html[查看]
+| `pick_save_path` | 选择HTML保存路径 | link:export.adoc#pick-save-path[查看]
+| `pick_save_path_pdf` | 选择PDF保存路径 | link:export.adoc#pick-save-path-pdf[查看]
+| `check_asciidoctor_pdf` | 检测 asciidoctor-pdf | link:export.adoc#check-asciidoctor-pdf[查看]
+| `export_to_pdf` | 导出PDF | link:export.adoc#export-to-pdf[查看]
+| `open_in_browser` | 浏览器打开HTML | link:export.adoc#open-in-browser[查看]
+| `resolve_includes` | 解析 include 指令 | link:export.adoc#resolve-includes[查看]
+| `save_editor_config` | 保存编辑器配置 | link:config.adoc#save-editor-config[查看]
+| `load_editor_config` | 加载编辑器配置 | link:config.adoc#load-editor-config[查看]
+| `save_pdf_config` | 保存PDF配置 | link:config.adoc#save-pdf-config[查看]
+| `load_pdf_config` | 加载PDF配置 | link:config.adoc#load-pdf-config[查看]
+| `add_recent_file` | 添加最近文件 | link:config.adoc#add-recent-file[查看]
+| `get_recent_files` | 获取最近文件列表 | link:config.adoc#get-recent-files[查看]
+| `clear_recent_files` | 清空最近文件 | link:config.adoc#clear-recent-files[查看]
+| `set_current_workspace` | 设置当前工作区 | link:config.adoc#set-current-workspace[查看]
+| `get_current_workspace` | 获取当前工作区 | link:config.adoc#get-current-workspace[查看]
+| `get_recent_workspaces` | 获取最近工作区列表 | link:config.adoc#get-recent-workspaces[查看]
+| `clear_recent_workspaces` | 清空最近工作区 | link:config.adoc#clear-recent-workspaces[查看]
+|===
+
+include::file.adoc[]
+
+include::ai.adoc[]
+
+include::search.adoc[]
+
+include::export.adoc[]
+
+include::config.adoc[]

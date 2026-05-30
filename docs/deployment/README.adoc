@@ -1,0 +1,9 @@
+// 部署概览
+[cols="1,2,2"]
+|===
+| 环境 | 地址 | 说明
+| 开发 | localhost:1420 | `npm run tauri dev`
+| 构建 | 本地安装包 | `npm run tauri build`
+|===
+
+include::setup.adoc[]

@@ -1,0 +1,17 @@
+// 插件系统概览
+// 扩展点定义和已注册插件
+
+[cols="1,2,2a"]
+|===
+| 扩展点 | 说明 | 示例用途
+| `toolbar` | 工具栏按钮 | 自定义工具按钮
+| `ai-action` | AI 操作 | 自定义 AI 操作（如代码解释）
+| `exporter` | 导出格式 | PDF、DOCX、EPUB 导出
+| `keybinding` | 快捷键 | 自定义键盘快捷键
+| `editor-extension` | 编辑器扩展 | CodeMirror 扩展
+| `preview-enhancer` | 预览增强 | Mermaid 图表渲染
+| `sidebar-panel` | 侧栏面板 | 标签面板、搜索面板
+| `status-item` | 状态栏项 | 自定义状态信息
+|===
+
+// 插件开发指南见 link:../plugin-guide.adoc[插件开发指南]

@@ -1,0 +1,41 @@
+# .claude/doc-sync.yaml
+# 由 /doc-init 自动生成
+
+project:
+  name: "docforge"
+  language: "rust"
+  framework: "tauri-v2"
+
+cli:
+  enabled: false
+
+api:
+  enabled: false
+
+schema:
+  enabled: false
+
+# Tauri IPC 命令（桌面应用的"API"）
+ipc:
+  enabled: true
+  entry_points:
+    - "src-tauri/src/commands/file.rs"
+    - "src-tauri/src/commands/ai.rs"
+    - "src-tauri/src/commands/search.rs"
+    - "src-tauri/src/commands/export.rs"
+    - "src-tauri/src/commands/config.rs"
+  patterns:
+    - "#\\[tauri::command\\]\\s*(?:\\n\\s*pub\\s+async\\s+fn\\s+(\\w+))"
+  reference_dir: "docs/_partials/ipc-reference/"
+
+# 插件系统（计划中，MVP 阶段未实现）
+plugins:
+  enabled: false
+
+docs:
+  architecture: "docs/architecture.adoc"
+  ipc_reference_dir: "docs/_partials/ipc-reference/"
+  plugin_reference_dir: "docs/_partials/plugin-reference/"
+  requirements_dir: "docs/requirements/"
+  deployment_dir: "docs/deployment/"
+  decisions_dir: "docs/decisions/"

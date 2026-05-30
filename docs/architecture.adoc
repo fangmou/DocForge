@@ -1,0 +1,56 @@
+= 方谋文构 (Fangmou DocForge) 架构文档
+
+一款为"思想工程师"打造的 AI 原生、可扩展的本地文本编辑器。写作，本应如工程。
+
+== 技术栈
+
+|===
+| 层 | 选型 | 说明
+| 桌面框架 | Tauri v2 | Rust 后端，体积 ~10MB
+| 前端 | Lit 3 (Web Components) | 无框架依赖，~5KB gzip
+| 编辑器 | CodeMirror 6 | 可扩展编辑器引擎
+| AsciiDoc 渲染 | @asciidoctor/core | 浏览器端渲染
+| AI 集成 | OpenAI 兼容 API | 支持 OpenAI/Ollama/DeepSeek 等
+| 构建 | Vite 6 | 前端构建工具
+|===
+
+== 架构分层
+
+....
+┌─────────────────────────────────────────────┐
+│           前端 (Lit Web Components)           │
+│  app-shell > sidebar + editor + preview      │
+│  ai-panel / toolbar / tab-bar / status       │
+│  search-panel / outline-panel / context-menu │
+│  template-panel / settings-dialog            │
+├─────────────────────────────────────────────┤
+│           服务层 (JS Services)                │
+│  file-service / ai-service / event-bus       │
+│  editor-state / search-service               │
+│  export-service / config-service / i18n      │
+│  asciidoc-attrs (渲染参数合并)                │
+│  scroll-sync (滚动同步直接调用)               │
+├──────────────────── Tauri IPC ───────────────┤
+│           命令层 (Rust Commands)              │
+│  file / ai / search / export / config        │
+├─────────────────────────────────────────────┤
+│           服务层 (Rust Services)              │
+│  ai_client (reqwest + rustls)                │
+└─────────────────────────────────────────────┘
+....
+
+== IPC 命令
+
+include::_partials/ipc-reference/README.adoc[]
+
+== 插件扩展点
+
+include::_partials/plugin-reference/README.adoc[]
+
+== 需求追踪
+
+include::requirements/README.adoc[]
+
+== 部署
+
+include::deployment/README.adoc[]

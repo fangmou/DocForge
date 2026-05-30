@@ -1,0 +1,95 @@
+// 导出命令详情
+
+[[save-rendered-html]]
+=== save_rendered_html
+
+*参数*: `html_content: String, dest_path: String`
+*返回*: `Result<String, String>`
+
+将前端 asciidoctor 渲染后的 HTML 内容包装到带样式的完整 HTML 模板中并保存到指定路径。自动创建不存在的父目录。返回实际保存路径。
+
+前端根据 `output_dir` 和 `output_naming` 配置自动生成 `dest_path`：有 `output_dir` 则输出到配置目录，否则输出到源文件同目录。仅无源文件时才弹出保存对话框。
+
+*HTML 模板包含*:
+- 响应式布局（max-width 800px 居中）
+- 中文字体栈
+- 代码块样式
+- 表格、引用、链接样式
+
+[[pick-save-path]]
+=== pick_save_path
+
+*参数*: `file_name: String`（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统保存文件对话框，预填文件名，限制为 `.html` 格式。在独立线程中执行避免阻塞异步运行时。
+
+[[pick-save-path-pdf]]
+=== pick_save_path_pdf
+
+*参数*: `file_name: String`（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统保存文件对话框，预填文件名，限制为 `.pdf` 格式。在独立线程中执行。
+
+[[check-asciidoctor-pdf]]
+=== check_asciidoctor_pdf
+
+*参数*: 无
+*返回*: `Result<bool, String>`
+
+检测系统是否安装了 `asciidoctor-pdf` 命令行工具。使用 `which` crate 在 PATH 中查找。返回 `true` 表示可用。
+
+[[export-to-pdf]]
+=== export_to_pdf
+
+*参数*: `source_path: String`（使用 AppState）
+*返回*: `Result<String, String>`
+
+使用 `asciidoctor-pdf` CLI 将 AsciiDoc 源文件导出为 PDF。
+
+*配置优先级*: adoc 文件头属性（如 `:pdf-theme:`, `:pdf-page-size:`）> 全局导出配置（设置对话框）。
+
+*输出文件名*: 由 `output_naming` 配置决定（`"stem"` 用源文件名，`"title"` 用文档标题）。
+
+*输出路径*:
+- 若配置了 `output_dir`，输出到 `{output_dir}/{name}.pdf`
+- 否则输出到源文件同目录 `{name}.pdf`
+
+*构建的命令行参数*:
+- `-o {output_path}` — 输出路径
+- `-r asciidoctor-diagram` — 若 `enable_diagram` 为 true
+- `-a pdf-theme={theme}` — 主题（可选）
+- `-a pdf-page-size={size}` — 页面大小（可选）
+- `-a pdf-fontsdir={dir}` — 字体目录（可选）
+- `-a pdf-footer-center={text}` — 页脚居中文本（可选）
+- `-a pdf-cover-image={path}` — 封面图片（可选）
+- 用户 `extra_args` — 自定义额外参数，支持引号内的空格
+
+未安装 `asciidoctor-pdf` 时前端应使用 `open_in_browser` 后备方案。
+
+[[open-in-browser]]
+=== open_in_browser
+
+*参数*: `html_content: String`
+*返回*: `Result<(), String>`
+
+将 HTML 内容写入临时文件 `docforge_export.html`，然后用系统默认浏览器打开。作为 PDF 导出的后备方案（用户可 Ctrl+P 打印为 PDF）。
+
+*平台命令*: Linux 使用 `xdg-open`，macOS 使用 `open`，Windows 使用 `cmd /c start`。
+
+[[resolve-includes]]
+=== resolve_includes
+
+*参数*: `content: String, base_dir: String`
+*返回*: `Result<String, String>`
+
+递归解析 AsciiDoc 内容中的 `include::file[]` 指令，将引用的文件内容内联展开。最大递归深度 5 层。
+
+*使用场景*:
+- 前端预览时解析 include 块（浏览器端 asciidoctor 无法访问本地文件）
+- HTML 导出前合并所有 include 文件
+
+*参数说明*:
+- `content` — 主文档内容
+- `base_dir` — 主文档所在目录，用于解析相对路径

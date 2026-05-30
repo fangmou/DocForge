@@ -1,0 +1,50 @@
+=== 环境搭建
+
+==== 前置依赖
+
+|===
+| 依赖 | 版本 | 安装方式
+| Node.js | >= 18 | `nvm install 24`
+| Rust | >= 1.77 | `rustup update stable`
+| 系统库 (Linux) | - | `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config`
+|===
+
+==== 初始化步骤
+
+[source,bash]
+----
+cd docforge
+npm install      # 安装前端依赖（make 命令会自动检查）
+make check       # 验证 Rust 编译
+make dev         # 启动开发模式
+----
+
+==== 快速编译（开发测试）
+
+[source,bash]
+----
+make linux          # Linux 可执行文件
+make windows        # Windows .exe（首次自动安装交叉编译工具链）
+make mac            # macOS（需 macOS 主机）
+----
+
+产物在 `src-tauri/target/<平台>/release/` 下。
+
+==== 打安装包（发布）
+
+[source,bash]
+----
+make pkg            # 当前平台安装包
+make pkg-linux      # Linux .deb/.AppImage
+make pkg-windows    # Windows .msi
+make pkg-mac        # macOS .dmg（需 macOS 主机）
+----
+
+产物在 `src-tauri/target/<平台>/release/bundle/` 下。
+
+=== 启动
+
+.wsl
+----
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./docforge
+----

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+src-tauri/target/
+*.local
+.claude/plans/
+.claude/scheduled_tasks.json

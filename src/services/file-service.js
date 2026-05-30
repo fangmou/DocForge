@@ -1,0 +1,49 @@
+const invoke = () => window.__TAURI__.core.invoke;
+
+export async function readFile(path) {
+  return invoke()('read_file', { path });
+}
+
+export async function writeFile(path, content) {
+  return invoke()('write_file', { path, content });
+}
+
+export async function listDirectory(path) {
+  return invoke()('list_directory', { path });
+}
+
+export async function listSubDirectory(path) {
+  return invoke()('list_sub_directory', { path });
+}
+
+export async function pickDirectory() {
+  return invoke()('pick_directory');
+}
+
+export async function createFile(path) {
+  return invoke()('create_file', { path });
+}
+
+export async function deleteFile(path) {
+  return invoke()('delete_file', { path });
+}
+
+export async function renameFile(oldPath, newPath) {
+  return invoke()('rename_file', { oldPath, newPath });
+}
+
+export async function createDir(path) {
+  return invoke()('create_dir', { path });
+}
+
+export async function pickSaveFile(fileName) {
+  return invoke()('pick_save_file', { fileName });
+}
+
+export async function getFileMtime(path) {
+  return invoke()('get_file_mtime', { path });
+}
+
+export async function listAllAdocFiles(path) {
+  return invoke()('list_all_adoc_files', { path });
+}
