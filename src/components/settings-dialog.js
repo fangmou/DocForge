@@ -3,6 +3,7 @@ import { loadAiConfig, saveAiConfig, testAiConnection } from '../services/ai-ser
 import { saveEditorConfig, loadEditorConfig, savePdfConfig, loadPdfConfig } from '../services/config-service.js';
 import { eventBus } from '../services/event-bus.js';
 import { t, setLanguage, getLanguage } from '../services/i18n.js';
+import { shortcutRegistry } from '../services/shortcut-registry.js';
 
 class SettingsDialog extends LitElement {
   static properties = {
@@ -232,6 +233,99 @@ class SettingsDialog extends LitElement {
     }
     .test-status.ok { color: var(--color-success); }
     .test-status.fail { color: var(--color-error); }
+    /* 快捷键列表 */
+    .shortcut-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+    }
+    .shortcut-row:hover {
+      background: var(--bg-3);
+    }
+    .shortcut-row .sc-label {
+      flex: 1;
+      font-size: 12px;
+      color: var(--text-1);
+    }
+    .shortcut-row input.sc-input {
+      width: 120px;
+      padding: 3px 8px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-3);
+      color: var(--text-1);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      text-align: center;
+      cursor: pointer;
+    }
+    .shortcut-row input.sc-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .shortcut-row input.sc-input.recording {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .shortcut-row .sc-conflict {
+      font-size: 10px;
+      color: var(--color-error);
+      white-space: nowrap;
+    }
+    .shortcut-row button.sc-reset {
+      padding: 2px 6px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-3);
+      font-size: 10px;
+      cursor: pointer;
+    }
+    .shortcut-row button.sc-reset:hover {
+      color: var(--text-1);
+      border-color: var(--border-subtle);
+    }
+    .shortcut-row button.sc-reset.has-custom {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .shortcut-row button.sc-reset.has-custom:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .shortcut-row button.sc-reset:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+    .shortcut-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .shortcut-header .hint {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    button.reset-all-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    button.reset-all-btn:hover { background: var(--bg-3); color: var(--text-1); }
   `;
 
   constructor() {
@@ -432,12 +526,16 @@ class SettingsDialog extends LitElement {
             <button class="nav-item ${this.activeTab === 'pdf' ? 'active' : ''}" @click=${() => this._switchTab('pdf')}>
               <span class="nav-icon">📄</span> ${t('settings.tab.export')}
             </button>
+            <button class="nav-item ${this.activeTab === 'shortcuts' ? 'active' : ''}" @click=${() => this._switchTab('shortcuts')}>
+              <span class="nav-icon">⌨</span> ${t('settings.tab.shortcuts')}
+            </button>
           </div>
           <div class="content">
             ${this.activeTab === 'editor' ? this._renderEditorTab() : ''}
             ${this.activeTab === 'appearance' ? this._renderAppearanceTab() : ''}
             ${this.activeTab === 'ai' ? this._renderAiTab() : ''}
             ${this.activeTab === 'pdf' ? this._renderPdfTab() : ''}
+            ${this.activeTab === 'shortcuts' ? this._renderShortcutsTab() : ''}
           </div>
         </div>
         <div class="footer">
@@ -579,6 +677,106 @@ class SettingsDialog extends LitElement {
       </div>
       <div class="hint" style="margin-top:8px;">${t('settings.export.adocPriorityHint')}</div>
     `;
+  }
+
+  _renderShortcutsTab() {
+    const shortcuts = shortcutRegistry.getAll();
+    return html`
+      <div class="shortcut-header">
+        <span class="hint">${t('settings.shortcuts.hint')}</span>
+        <button class="reset-all-btn" @click=${this._resetAllShortcuts}>${t('settings.shortcuts.resetAll')}</button>
+      </div>
+      <div class="shortcut-list">
+        ${shortcuts.map(sc => {
+          const conflict = this._shortcutConflict(sc.id);
+          return html`
+          <div class="shortcut-row">
+            <span class="sc-label">${sc.label}</span>
+            ${conflict ? html`
+              <span class="sc-conflict">${t('settings.shortcuts.conflict', { label: conflict.label })}</span>
+            ` : ''}
+            <input class="sc-input"
+                   .value=${sc.shortcut}
+                   data-sc-id=${sc.id}
+                   placeholder="${sc.defaultShortcut}"
+                   @focus=${this._startRecording}
+                   @blur=${this._stopRecording}
+                   @keydown=${this._captureKey} />
+            <button class="sc-reset ${sc.isCustom ? 'has-custom' : ''}" @click=${() => this._resetShortcut(sc.id)} ?disabled=${!sc.isCustom}>${t('settings.shortcuts.reset')}</button>
+          </div>
+        `;
+        })}
+      </div>
+    `;
+  }
+
+  _startRecording(e) {
+    e.target.classList.add('recording');
+    e.target.value = '';
+  }
+
+  _stopRecording(e) {
+    const input = e.target;
+    input.classList.remove('recording');
+    const id = input.dataset.scId;
+    if (!input.value.trim()) {
+      // 恢复当前值
+      input.value = shortcutRegistry.getShortcut(id);
+    }
+  }
+
+  _captureKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const input = e.target;
+    const id = input.dataset.scId;
+
+    // Escape 取消录制
+    if (e.key === 'Escape') {
+      input.value = shortcutRegistry.getShortcut(id);
+      input.blur();
+      return;
+    }
+
+    // Backspace/Delete 清除快捷键
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      shortcutRegistry.setShortcut(id, '').catch(() => {});
+      input.value = '';
+      this.requestUpdate();
+      return;
+    }
+
+    // 忽略单独修饰键
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+
+    const parts = [];
+    if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+
+    let key = e.key;
+    if (key === ' ') key = 'Space';
+    if (key.length === 1) key = key.toUpperCase();
+    parts.push(key);
+
+    const combo = parts.join('+');
+    shortcutRegistry.setShortcut(id, combo).catch(() => {});
+    input.value = combo;
+    this.requestUpdate();
+  }
+
+  _shortcutConflict(id) {
+    const keys = shortcutRegistry.getShortcut(id);
+    if (!keys) return null;
+    return shortcutRegistry.findConflict(keys, id);
+  }
+
+  _resetShortcut(id) {
+    shortcutRegistry.reset(id).then(() => this.requestUpdate());
+  }
+
+  _resetAllShortcuts() {
+    shortcutRegistry.resetAll().then(() => this.requestUpdate());
   }
 }
 

@@ -179,3 +179,35 @@ AppConfig 中新增字段：
 *返回*: `Result<(), String>`
 
 清空最近工作区列表并持久化。
+
+== 快捷键管理
+
+AppConfig 中新增字段：
+
+```
+{
+  shortcuts: HashMap<String, String>  // 用户自定义快捷键覆盖，key 为动作 id，value 为组合键
+}
+```
+
+前端 `shortcut-registry.js` 维护一份默认快捷键表（如 `save → Ctrl+S`），`shortcuts` 字段仅存储用户自定义的覆盖项。前端启动时调用 `load_shortcuts` 合并覆盖，修改时调用 `save_shortcuts` 持久化。
+
+运行时快捷键分两个通道生效：
+- **编辑器内快捷键**（save/search/findReplace/gotoLine/zoomIn/zoomOut/zoomReset）：通过 `keymapCompartment` 注入 CodeMirror keymap，支持用户自定义后动态 reconfigure
+- **全局快捷键**（newFile/toggle*/exportHtml/exportPdf）：通过 `app-shell.js` 的 window keydown 监听，使用 `matchEvent()` 匹配注册中心中的绑定，通过 eventBus 分发动作
+
+[[save-shortcuts]]
+=== save_shortcuts
+
+*参数*: `shortcuts: HashMap<String, String>`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存用户自定义快捷键覆盖并持久化到磁盘。空 HashMap 等同于全部重置为默认。
+
+[[load-shortcuts]]
+=== load_shortcuts
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<HashMap<String, String>, String>`
+
+加载用户自定义快捷键覆盖。启动时由前端 `shortcut-registry.init()` 调用。

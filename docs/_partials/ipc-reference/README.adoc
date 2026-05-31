@@ -39,6 +39,8 @@
 | `get_current_workspace` | 获取当前工作区 | link:config.adoc#get-current-workspace[查看]
 | `get_recent_workspaces` | 获取最近工作区列表 | link:config.adoc#get-recent-workspaces[查看]
 | `clear_recent_workspaces` | 清空最近工作区 | link:config.adoc#clear-recent-workspaces[查看]
+| `save_shortcuts` | 保存快捷键配置 | link:config.adoc#save-shortcuts[查看]
+| `load_shortcuts` | 加载快捷键配置 | link:config.adoc#load-shortcuts[查看]
 | `build_link_index` | 构建链接索引（SQLite） | link:link.adoc#build-link-index[查看]
 | `update_link_file` | 增量更新单文件索引 | link:link.adoc#update-link-file[查看]
 | `add_tag_to_file` | 追加标签到文件 | link:link.adoc#add-tag-to-file[查看]

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -95,6 +96,7 @@ pub struct AppConfig {
     pub recent_files: Vec<RecentFile>,
     pub current_workspace: String,
     pub recent_workspaces: Vec<RecentFile>,
+    pub shortcuts: HashMap<String, String>,
 }
 
 impl Default for AppConfig {
@@ -106,6 +108,7 @@ impl Default for AppConfig {
             recent_files: Vec::new(),
             current_workspace: String::new(),
             recent_workspaces: Vec::new(),
+            shortcuts: HashMap::new(),
         }
     }
 }

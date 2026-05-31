@@ -1,4 +1,5 @@
 use crate::models::config::{AppState, AppConfig, EditorConfig, RecentFile};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State};
@@ -31,8 +32,10 @@ pub async fn save_editor_config(
     state: State<'_, std::sync::Mutex<AppState>>,
     config: EditorConfig,
 ) -> Result<(), String> {
-    lock_config!(state).editor = config;
-    let snapshot = lock_config!(state).clone();
+    let mut guard = lock_config!(state);
+    guard.editor = config;
+    let snapshot = guard.clone();
+    drop(guard);
     persist_to_disk(&app, &snapshot);
     Ok(())
 }
@@ -76,8 +79,10 @@ pub async fn clear_recent_files(
     app: tauri::AppHandle,
     state: State<'_, std::sync::Mutex<AppState>>,
 ) -> Result<(), String> {
-    lock_config!(state).recent_files.clear();
-    let snapshot = lock_config!(state).clone();
+    let mut guard = lock_config!(state);
+    guard.recent_files.clear();
+    let snapshot = guard.clone();
+    drop(guard);
     persist_to_disk(&app, &snapshot);
     Ok(())
 }
@@ -88,8 +93,10 @@ pub async fn save_pdf_config(
     state: State<'_, std::sync::Mutex<AppState>>,
     config: crate::models::config::PdfConfig,
 ) -> Result<(), String> {
-    lock_config!(state).pdf = config;
-    let snapshot = lock_config!(state).clone();
+    let mut guard = lock_config!(state);
+    guard.pdf = config;
+    let snapshot = guard.clone();
+    drop(guard);
     persist_to_disk(&app, &snapshot);
     Ok(())
 }
@@ -107,8 +114,10 @@ pub async fn save_ai_config(
     state: State<'_, std::sync::Mutex<AppState>>,
     config: crate::models::config::AiConfig,
 ) -> Result<(), String> {
-    lock_config!(state).ai = config;
-    let snapshot = lock_config!(state).clone();
+    let mut guard = lock_config!(state);
+    guard.ai = config;
+    let snapshot = guard.clone();
+    drop(guard);
     persist_to_disk(&app, &snapshot);
     Ok(())
 }
@@ -176,8 +185,33 @@ pub async fn clear_recent_workspaces(
     app: tauri::AppHandle,
     state: State<'_, std::sync::Mutex<AppState>>,
 ) -> Result<(), String> {
-    lock_config!(state).recent_workspaces.clear();
-    let snapshot = lock_config!(state).clone();
+    let mut guard = lock_config!(state);
+    guard.recent_workspaces.clear();
+    let snapshot = guard.clone();
+    drop(guard);
     persist_to_disk(&app, &snapshot);
     Ok(())
+}
+
+// === 快捷键配置 ===
+
+#[tauri::command]
+pub async fn save_shortcuts(
+    app: tauri::AppHandle,
+    state: State<'_, std::sync::Mutex<AppState>>,
+    shortcuts: HashMap<String, String>,
+) -> Result<(), String> {
+    let mut guard = lock_config!(state);
+    guard.shortcuts = shortcuts;
+    let snapshot = guard.clone();
+    drop(guard);
+    persist_to_disk(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn load_shortcuts(
+    state: State<'_, std::sync::Mutex<AppState>>,
+) -> Result<HashMap<String, String>, String> {
+    Ok(lock_config!(state).shortcuts.clone())
 }

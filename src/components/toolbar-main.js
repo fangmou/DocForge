@@ -4,6 +4,7 @@ import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { exportToHtml, checkAsciidoctorPdf, exportToPdf, openInBrowser } from '../services/export-service.js';
 import { t } from '../services/i18n.js';
+import { shortcutRegistry } from '../services/shortcut-registry.js';
 
 // Lucide 风格统一 SVG 图标 (viewBox 0 0 24 24, stroke 2)
 const icons = {
@@ -199,6 +200,10 @@ class ToolbarMain extends LitElement {
     }
     this._themeHandler = (theme) => { this._theme = theme; };
     eventBus.on('theme-changed', this._themeHandler);
+    this._exportHtmlHandler = () => this._exportHtml();
+    this._exportPdfHandler = () => this._exportPdf();
+    eventBus.on('export-html', this._exportHtmlHandler);
+    eventBus.on('export-pdf', this._exportPdfHandler);
     document.addEventListener('click', this._clickOutside);
     import('../services/config-service.js').then(({ loadEditorConfig }) => {
       loadEditorConfig().then(c => { if (c.theme) this._theme = c.theme; }).catch(() => {});
@@ -212,6 +217,8 @@ class ToolbarMain extends LitElement {
       eventBus.off(name, handler);
     }
     if (this._themeHandler) eventBus.off('theme-changed', this._themeHandler);
+    if (this._exportHtmlHandler) eventBus.off('export-html', this._exportHtmlHandler);
+    if (this._exportPdfHandler) eventBus.off('export-pdf', this._exportPdfHandler);
     document.removeEventListener('click', this._clickOutside);
   }
 
@@ -253,7 +260,7 @@ class ToolbarMain extends LitElement {
   render() {
     return html`
       <!-- 侧栏切换 -->
-      <button title="${t('toolbar.toggleSidebar')}" @click=${() => this.dispatchEvent(new CustomEvent('toggle-sidebar'))}>
+      <button title="${t('toolbar.toggleSidebar')} (${shortcutRegistry.getShortcut('toggleSidebar')})" @click=${() => this.dispatchEvent(new CustomEvent('toggle-sidebar'))}>
         ${icon('menu')}
       </button>
 
@@ -262,19 +269,19 @@ class ToolbarMain extends LitElement {
       <!-- 文件组 -->
       <div class="group">
         <button title="${t('toolbar.openDirectory')}" @click=${this._openDir}>${icon('folder')}</button>
-        <button title="${t('toolbar.btnNew')}" @click=${(e) => this._toggleDropdown('new', e)}>
+        <button title="${t('toolbar.btnNew')} (${shortcutRegistry.getShortcut('newFile')})" @click=${(e) => this._toggleDropdown('new', e)}>
           ${icon('plus')}
           ${icon('chevron', 'chevron')}
         </button>
-        <button title="${t('toolbar.save')}" @click=${() => eventBus.emit('save-file')}>${icon('save')}</button>
+        <button title="${t('toolbar.save')} (${shortcutRegistry.getShortcut('save')})" @click=${() => eventBus.emit('save-file')}>${icon('save')}</button>
       </div>
 
       <div class="sep"></div>
 
       <!-- 视图组 -->
       <div class="group">
-        <button title="${t('toolbar.togglePreview')}" @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon('eye')}</button>
-        <button title="${t('toolbar.toggleWordWrap')}" @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
+        <button title="${t('toolbar.togglePreview')} (${shortcutRegistry.getShortcut('togglePreview')})" @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon('eye')}</button>
+        <button title="${t('toolbar.toggleWordWrap')} (${shortcutRegistry.getShortcut('toggleWordWrap')})" @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
       </div>
 
       <div class="sep"></div>
@@ -282,24 +289,25 @@ class ToolbarMain extends LitElement {
       <!-- 面板组（带激活态） -->
       <div class="group">
         <button class="${this._activePanel === 'search' ? 'on' : ''}"
+                title="${t('toolbar.toggleSearch')} (${shortcutRegistry.getShortcut('search')}) / ${t('toolbar.openFindReplace')} (${shortcutRegistry.getShortcut('findReplace')})"
                 @click=${(e) => this._toggleDropdown('search', e)}>
           ${icon('search')}
           ${icon('chevron', 'chevron')}
         </button>
         <button class="${this._activePanel === 'outline' ? 'on' : ''}"
-                title="${t('toolbar.toggleOutline')}"
+                title="${t('toolbar.toggleOutline')} (${shortcutRegistry.getShortcut('toggleOutline')})"
                 @click=${() => this._togglePanel('outline')}>${icon('list')}</button>
         <button class="${this._activePanel === 'ai' ? 'on' : ''}"
-                title="${t('toolbar.toggleAI')}"
+                title="${t('toolbar.toggleAI')} (${shortcutRegistry.getShortcut('toggleAI')})"
                 @click=${() => this._togglePanel('ai')}>${icon('sparkles')}</button>
         <button class="${this._activePanel === 'backlinks' ? 'on' : ''}"
-                title="${t('toolbar.toggleBacklinks')}"
+                title="${t('toolbar.toggleBacklinks')} (${shortcutRegistry.getShortcut('toggleBacklinks')})"
                 @click=${() => this._togglePanel('backlinks')}>${icon('link')}</button>
         <button class="${this._activePanel === 'graph' ? 'on' : ''}"
-                title="${t('toolbar.toggleGraph')}"
+                title="${t('toolbar.toggleGraph')} (${shortcutRegistry.getShortcut('toggleGraph')})"
                 @click=${() => this._togglePanel('graph')}>${icon('graph')}</button>
         <button class="${this._activePanel === 'tags' ? 'on' : ''}"
-                title="${t('toolbar.toggleTags')}"
+                title="${t('toolbar.toggleTags')} (${shortcutRegistry.getShortcut('toggleTags')})"
                 @click=${() => this._togglePanel('tags')}>🏷</button>
       </div>
 
@@ -317,7 +325,7 @@ class ToolbarMain extends LitElement {
 
       <!-- 右侧 -->
       <button class="${this._activePanel === 'plugin' ? 'on' : ''}"
-              title="${t('toolbar.togglePluginManager')}"
+              title="${t('toolbar.togglePluginManager')} (${shortcutRegistry.getShortcut('togglePlugin')})"
               @click=${() => this._togglePanel('plugin')}>🧩</button>
       <button title="${t('toolbar.openSettings')}" @click=${() => this.dispatchEvent(new CustomEvent('open-settings'))}>${icon('settings')}</button>
       <button class="theme-btn" @click=${this._toggleTheme}>
@@ -329,7 +337,7 @@ class ToolbarMain extends LitElement {
         <div class="dropdown" style="left: ${this._newDropdownLeft}px" @click=${this._closeDropdown}>
           <button class="dropdown-item" @click=${() => eventBus.emit('new-file')}>
             ${icon('plus')} <span class="label">${t('toolbar.newFile')}</span>
-            <span class="shortcut">Ctrl+N</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('newFile')}</span>
           </button>
           <button class="dropdown-item" @click=${() => this._togglePanel('template')}>
             ${icon('template')} <span class="label">${t('template.panelTitle')}</span>
@@ -340,9 +348,11 @@ class ToolbarMain extends LitElement {
         <div class="dropdown" style="left: ${this._exportDropdownLeft}px" @click=${this._closeDropdown}>
           <button class="dropdown-item" @click=${this._exportHtml}>
             ${icon('upload')} <span class="label">${t('toolbar.exportHtml')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('exportHtml')}</span>
           </button>
           <button class="dropdown-item" @click=${this._exportPdf}>
             ${icon('upload')} <span class="label">${t('toolbar.exportPdf')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('exportPdf')}</span>
           </button>
         </div>
       ` : ''}
@@ -350,11 +360,11 @@ class ToolbarMain extends LitElement {
         <div class="dropdown" style="left: ${this._searchDropdownLeft}px" @click=${this._closeDropdown}>
           <button class="dropdown-item" @click=${() => this._togglePanel('search')}>
             ${icon('search')} <span class="label">${t('toolbar.btnSearch')}</span>
-            <span class="shortcut">Ctrl+Shift+F</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('search')}</span>
           </button>
           <button class="dropdown-item" @click=${() => { this._closeDropdown(); eventBus.emit('open-find-replace'); }}>
             ${icon('wrap')} <span class="label">${t('toolbar.btnFindReplace')}</span>
-            <span class="shortcut">Ctrl+F</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('findReplace')}</span>
           </button>
         </div>
       ` : ''}

@@ -43,3 +43,11 @@ export async function getRecentWorkspaces() {
 export async function clearRecentWorkspaces() {
   return invoke()('clear_recent_workspaces');
 }
+
+export async function saveShortcuts(shortcuts) {
+  return invoke()('save_shortcuts', { shortcuts });
+}
+
+export async function loadShortcuts() {
+  return invoke()('load_shortcuts');
+}

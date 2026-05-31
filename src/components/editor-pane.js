@@ -434,6 +434,7 @@ async function asciidocCompletions(context) {
 
 const themeCompartment = new Compartment();
 const wrapCompartment = new Compartment();
+const keymapCompartment = new Compartment();
 
 class EditorPane extends LitElement {
   static styles = css`
@@ -562,15 +563,15 @@ class EditorPane extends LitElement {
             ...completionKeymap,
             indentWithTab,
           ]),
-          // 自定义快捷键（独立 keymap 优先级高于上面的 searchKeymap）
-          keymap.of([
+          // 自定义快捷键（通过 Compartment 动态更新）
+          keymapCompartment.of(keymap.of([
             { key: 'Mod-s', run: () => { this._saveFile(); return true; } },
             { key: 'Mod-Shift-f', run: () => { eventBus.emit('toggle-search'); return true; } },
             { key: 'Mod-g', run: () => { this._showGotoLine(); return true; } },
             { key: 'Mod-=', run: () => { this._adjustFontSize(1); return true; } },
             { key: 'Mod--', run: () => { this._adjustFontSize(-1); return true; } },
             { key: 'Mod-0', run: () => { this._setFontSize(14); return true; } },
-          ]),
+          ])),
           adocLang,
           syntaxHighlighting(defaultHighlightStyle),
           themeCompartment.of([]),
@@ -644,6 +645,26 @@ class EditorPane extends LitElement {
       if (config.word_wrap) this._toggleWrap();
       if (config.auto_save_interval > 0) this._autoSaveDelay = config.auto_save_interval;
     } catch (e) { /* 使用默认值 */ }
+    // 从快捷键注册中心加载自定义快捷键
+    try {
+      const { shortcutRegistry } = await import('../services/shortcut-registry.js');
+      this._applyShortcutKeymap(shortcutRegistry);
+    } catch (_) {}
+  }
+
+  _applyShortcutKeymap(sr) {
+    if (!this._view) return;
+    const bindings = [
+      { key: sr.getCmKey('save') || 'Mod-s',        run: () => { this._saveFile(); return true; } },
+      { key: sr.getCmKey('search') || 'Mod-Shift-f', run: () => { eventBus.emit('toggle-search'); return true; } },
+      { key: sr.getCmKey('gotoLine') || 'Mod-g',     run: () => { this._showGotoLine(); return true; } },
+      { key: sr.getCmKey('zoomIn') || 'Mod-=',       run: () => { this._adjustFontSize(1); return true; } },
+      { key: sr.getCmKey('zoomOut') || 'Mod--',      run: () => { this._adjustFontSize(-1); return true; } },
+      { key: sr.getCmKey('zoomReset') || 'Mod-0',    run: () => { this._setFontSize(14); return true; } },
+    ].filter(b => b.key);
+    this._view.dispatch({
+      effects: keymapCompartment.reconfigure(keymap.of(bindings)),
+    });
   }
 
   _adjustFontSize(delta) {

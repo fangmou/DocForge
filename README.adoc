@@ -1,0 +1,90 @@
+= 方谋文构 Fangmou DocForge
+:toc: macro
+:toclevels: 2
+
+image:https://img.shields.io/badge/version-0.1.0-blue[Version]
+image:https://img.shields.io/badge/license-MIT-green[License]
+image:https://img.shields.io/badge/Tauri-v2-orange[Tauri]
+image:https://img.shields.io/badge/Lit-3-blueviolet[Lit]
+
+**AI 原生、可扩展的本地 AsciiDoc 编辑器 — 为思想工程师而造**
+
+> 写作，本应如工程。
+
+toc::[]
+
+== 方谋文构是什么？
+
+一款为"思想工程师"打造的桌面文本编辑器。将软件工程的纪律赋予写作——纯文本根基、版本控制友好、AI 深度集成、知识网络化管理。没有云端锁定，没有私有格式，你的文字永远属于你自己。
+
+== 功能亮点
+
+- **AsciiDoc 编辑器**：CodeMirror 6 + 25+ 语法自动补全 + 实时双栏预览
+- **AI 辅助写作**：流式续写/润色/翻译/总结，支持 OpenAI、Ollama、DeepSeek 等
+- **知识网络**：双向链接 + 反向引用 + 标签体系 + 力导向知识图谱
+- **多工作区**：项目间快捷切换（Ctrl+Alt+1~9），自动恢复上次状态
+- **全文搜索**：Rust 引擎驱动，支持正则，跨文件搜索替换
+- **导出发布**：HTML（响应式模板）/ PDF（asciidoctor-pdf 集成）
+- **插件系统**：Worker 沙箱隔离，8 个扩展点（工具栏/AI动作/导出/编辑器/预览/侧栏/快捷键/状态栏）
+- **中英双语**：完整的国际化支持，新增语言只需添加 JSON 文件
+- **全平台**：Linux / Windows / macOS
+
+全部 32 项功能需求已完成，详见 link:docs/requirements/README.adoc[需求追踪]。
+
+== 技术栈
+
+include::docs/_partials/tech-stack.adoc[]
+
+== 快速开始
+
+include::docs/deployment/setup.adoc[]
+
+== 项目结构
+
+....
+DocForge/
+├── src/
+│   ├── components/       # Lit Web Components（editor / preview / ai-panel / graph-view ...）
+│   ├── services/         # 前端服务层（file-service / ai-service / event-bus / i18n ...）
+│   └── i18n/             # 语言包（zh.json / en.json）
+├── src-tauri/
+│   └── src/
+│       ├── commands/     # Tauri IPC 命令（file / ai / search / link / export / config ...）
+│       └── services/     # Rust 业务逻辑（ai_client / link_db）
+├── docs/                 # 项目文档
+│   ├── architecture.adoc       # 架构文档
+│   ├── requirements/           # 需求追踪
+│   ├── deployment/             # 部署运维
+│   └── _partials/              # 文档片段（IPC 参考 / 插件参考 / 技术栈）
+└── Makefile              # 构建快捷命令
+....
+
+== 架构概览
+
+....
+┌─────────────────────────────────────────────┐
+│           前端 (Lit Web Components)           │
+├─────────────────────────────────────────────┤
+│           服务层 (JS Services)                │
+├──────────────────── Tauri IPC ───────────────┤
+│           命令层 (Rust Commands)              │
+├─────────────────────────────────────────────┤
+│           服务层 (Rust Services)              │
+└─────────────────────────────────────────────┘
+....
+
+详细架构、数据流和 IPC 命令见 link:docs/architecture.adoc[架构文档]。
+
+== 文档目录
+
+- link:docs/architecture.adoc[架构文档] — 技术架构、数据流、IPC 命令、插件扩展点
+- link:docs/requirements/README.adoc[需求追踪] — 32 项功能列表与完成状态
+- link:docs/deployment/README.adoc[部署运维] — 环境搭建、构建、打包
+- link:docs/_partials/ipc-reference/README.adoc[IPC 参考] — 全部 Tauri 命令接口
+- link:docs/_partials/plugin-reference/README.adoc[插件参考] — 扩展点与插件开发
+- link:docs/decisions/[决策记录] — 架构决策与踩坑记录
+- link:docs/product.adoc[产品介绍] — 宣传文案（网站用）
+
+== 许可证
+
+MIT License. 详见 LICENSE 文件。

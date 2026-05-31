@@ -69,6 +69,8 @@ pub fn run() {
             commands::config::get_current_workspace,
             commands::config::get_recent_workspaces,
             commands::config::clear_recent_workspaces,
+            commands::config::save_shortcuts,
+            commands::config::load_shortcuts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running docforge");

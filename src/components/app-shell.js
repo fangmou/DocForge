@@ -148,19 +148,52 @@ class AppShell extends LitElement {
     this._loadConfig();
     // Tauri 原生拖拽（全平台通用，Linux 上 web API 的 file.path 不可用）
     this._setupDragDrop();
-    // 全局快捷键：Ctrl+Alt+1~9 切换工作区
-    this._globalKeyHandler = async (e) => {
+    // 全局快捷键
+    this._shortcutRegistry = null;
+    import('../services/shortcut-registry.js').then(({ shortcutRegistry }) => {
+      this._shortcutRegistry = shortcutRegistry;
+    }).catch(() => {});
+    this._globalKeyHandler = (e) => {
+      // Ctrl+Alt+1~9 切换工作区（保留旧逻辑）
       if ((e.ctrlKey || e.metaKey) && e.altKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
-        try {
-          const { getRecentWorkspaces } = await import('../services/config-service.js');
-          const list = await getRecentWorkspaces();
+        import('../services/config-service.js').then(({ getRecentWorkspaces }) => {
+          return getRecentWorkspaces();
+        }).then(list => {
           const idx = parseInt(e.key) - 1;
-          if (list[idx]) {
-            eventBus.emit('workspace-opened', list[idx].path);
-          }
-        } catch (_) {}
+          if (list[idx]) eventBus.emit('workspace-opened', list[idx].path);
+        }).catch(() => {});
+        return;
       }
+
+      if (!this._shortcutRegistry) return;
+      const action = this._shortcutRegistry.matchEvent(e);
+      if (!action) return;
+
+      // CodeMirror 已处理的快捷键不要重复触发
+      const editorHandled = new Set(['save', 'search', 'findReplace', 'gotoLine', 'zoomIn', 'zoomOut', 'zoomReset']);
+      if (editorHandled.has(action)) return;
+
+      // 如果焦点在 input/textarea/select 中，不拦截（避免影响正常输入）
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      e.preventDefault();
+      const actionMap = {
+        newFile:         () => eventBus.emit('new-file'),
+        toggleWordWrap:  () => eventBus.emit('toggle-word-wrap'),
+        toggleOutline:   () => eventBus.emit('toggle-outline'),
+        toggleAI:        () => eventBus.emit('toggle-ai-panel'),
+        toggleBacklinks: () => eventBus.emit('toggle-backlinks'),
+        toggleGraph:     () => eventBus.emit('toggle-graph-view'),
+        toggleTags:      () => eventBus.emit('toggle-tags-panel'),
+        togglePreview:   () => eventBus.emit('toggle-preview'),
+        toggleSidebar:   () => eventBus.emit('toggle-sidebar'),
+        togglePlugin:    () => eventBus.emit('toggle-plugin-manager'),
+        exportHtml:      () => eventBus.emit('export-html'),
+        exportPdf:       () => eventBus.emit('export-pdf'),
+      };
+      if (actionMap[action]) actionMap[action]();
     };
     window.addEventListener('keydown', this._globalKeyHandler);
   }
@@ -168,6 +201,9 @@ class AppShell extends LitElement {
   async _loadConfig() {
     try {
       const { loadEditorConfig, getCurrentWorkspace } = await import('../services/config-service.js');
+      // 加载快捷键自定义覆盖
+      const { shortcutRegistry } = await import('../services/shortcut-registry.js');
+      await shortcutRegistry.init();
       // 加载语言
       const edConfig = await loadEditorConfig();
       if (edConfig.language) {
