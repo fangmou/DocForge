@@ -95,3 +95,21 @@
 *症状*: 右键菜单总是出现在左上角 (0,0)。
 *原因*: `:host` 有 `position: fixed`，但 `left`/`top` 值通过 JS 设置在子元素 `.menu` 的 inline style 上。`.menu` 没有声明 `position` 属性，CSS `left`/`top` 只对 `position` 非 `static` 的元素生效，因此值被忽略。
 *正确*: 将 `this.style.left = x + 'px'` 和 `this.style.top = y + 'px'` 设置在有 `position: fixed` 的 host 元素上，而非子元素。
+
+== AsciiDoc include:: 正则必须匹配双冒号
+
+*症状*: 反向链接永远为空，数据库中 target 路径混入冒号（如 `docs/:_partials/file.adoc`）。
+*原因*: 正则写成 `include:([^\[]+)\[`（单冒号），但 AsciiDoc 语法是 `include::file[]`（双冒号）。第一个 `:` 被正则字面匹配，第二个 `:` 被捕获进路径，导致路径解析错误，永远无法匹配真实文件路径。
+*正确*: 正则必须写 `include::([^\[]+)\[`，双冒号匹配。
+
+== 引用已删除函数导致 ReferenceError
+
+*症状*: xref 和 `<<>>` 的 Ctrl+Click 跳转静默失败，控制台报 `ReferenceError: _normalizePath is not defined`。
+*原因*: 重构时删除了 `_normalizePath` 函数定义，但 xref/<<>> 跳转代码中仍引用。include 跳转已改为直接拼接，但 xref/<<>> 漏改。
+*规则*: 删除函数前全局搜索所有引用，确保零残留。
+
+== 异步索引构建未等待即查询
+
+*症状*: 打开工作区后立即操作，反向链接为空，等很久也不出现。
+*原因*: `buildIndex` 在 `workspace-opened` 中 fire-and-forget（`.catch(() => {})`），不阻塞后续操作。用户点击 include 跳转时索引尚未建完，查询返回空结果。之后索引建完也不再重新查询。
+*正确*: `linkIndex` 暴露 `ready` Promise，所有消费者查询前 `await linkIndex.ready`，确保索引就绪。

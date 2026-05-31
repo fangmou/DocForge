@@ -94,6 +94,21 @@ class TagsPanel extends LitElement {
       padding-top: 40px;
       font-size: 12px;
     }
+    .add-bar {
+      padding: 6px 14px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .add-bar input {
+      width: 100%;
+      padding: 4px 8px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-3);
+      color: var(--text-1);
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    .add-bar input:focus { outline: none; border-color: var(--accent); }
   `;
 
   constructor() {
@@ -132,9 +147,11 @@ class TagsPanel extends LitElement {
   async _loadTags() {
     try {
       const { linkIndex } = await import('../services/link-index.js');
-      this.tags = linkIndex.getAllTags();
+      if (linkIndex.ready) await linkIndex.ready;
+      this.tags = await linkIndex.getAllTags();
       if (this.activeTag) {
-        this.files = linkIndex.getFilesByTag(this.activeTag).map(p => ({
+        const paths = await linkIndex.getFilesByTag(this.activeTag);
+        this.files = paths.map(p => ({
           path: p,
           name: p.split('/').pop(),
         }));
@@ -150,7 +167,8 @@ class TagsPanel extends LitElement {
     if (this.activeTag) {
       try {
         const { linkIndex } = await import('../services/link-index.js');
-        this.files = linkIndex.getFilesByTag(this.activeTag).map(p => ({
+        const paths = await linkIndex.getFilesByTag(this.activeTag);
+        this.files = paths.map(p => ({
           path: p,
           name: p.split('/').pop(),
         }));
@@ -168,6 +186,22 @@ class TagsPanel extends LitElement {
       const content = await readFile(path);
       editorState.openFile(path, content);
       eventBus.emit('file-opened', { path, content });
+    } catch (_) {}
+  }
+
+  async _addTag(tagText) {
+    const tag = tagText.trim();
+    if (!tag) return;
+    const path = editorState.activeFilePath;
+    if (!path) return;
+    const file = editorState.getFile(path);
+    if (!file) return;
+    try {
+      const { linkIndex } = await import('../services/link-index.js');
+      const newContent = await linkIndex.addTagToFile(path, file.content, tag);
+      eventBus.emit('replace-editor-content', newContent);
+      await linkIndex.updateFile(path, newContent);
+      this._loadTags();
     } catch (_) {}
   }
 
@@ -197,6 +231,15 @@ class TagsPanel extends LitElement {
         <div class="empty">${t('tags.noFiles')}</div>
       ` : this.tags.length === 0 ? html`
         <div class="empty">${t('tags.empty')}</div>
+      ` : ''}
+      ${editorState.activeFilePath ? html`
+        <div class="add-bar">
+          <input
+            type="text"
+            placeholder="${t('tags.addPlaceholder')}"
+            @keydown=${(e) => { if (e.key === 'Enter') { this._addTag(e.target.value); e.target.value = ''; } }}
+          />
+        </div>
       ` : ''}
     `;
   }

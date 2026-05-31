@@ -1,46 +1,151 @@
-// 链接命令详情
+// 链接与索引命令详情
+// 所有命令通过 SQLite 内存数据库（link_db）执行，数据库为运行时缓存，唯一事实源为文本文件。
 
 [[build-link-index]]
 === build_link_index
 
 *参数*: `workspace_root: String`
-*返回*: `Result<Vec<LinkEntry>, String>`
+*返回*: `Result<(), String>`
 
-递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt` 文件，解析其中的链接引用（`xref:`、`<<>>`、`include::`），构建正向链接索引。跳过以 `.` 开头的隐藏目录和文件。
+递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt` 文件，单次解析提取链接、标题、标签、大纲四种数据，批量写入 SQLite 内存数据库。跳过以 `.` 开头的隐藏目录和文件。
+
+前端 `link-index.js` 会在构建后批量加载标题到本地 `_titleCache`（同步 `getTitle()` 使用）。
+
+[[update-link-file]]
+=== update_link_file
+
+*参数*: `file_path: String, content: String, workspace_root: String`
+*返回*: `Result<(), String>`
+
+增量更新单个文件的索引数据。解析文件内容提取四种数据，单事务内先 DELETE 该文件的旧记录再 INSERT 新记录。文件保存时自动触发。
+
+[[add-tag-to-file]]
+=== add_tag_to_file
+
+*参数*: `file_path: String, content: String, tag: String`
+*返回*: `Result<String, String>`
+
+向文件的 `:keywords:` 属性追加标签。如已有 `:keywords:` 行则追加（逗号分隔），否则在文件头（标题行后）插入新行。返回修改后的文件内容，前端用 CodeMirror 替换编辑器内容。
+
+[[query-backlinks]]
+=== query_backlinks
+
+*参数*: `file_path: String`
+*返回*: `Vec<LinkEntry>`
+
+查询指定文件的反向链接——所有引用了该文件的其他文件。通过 SQLite 索引 `idx_links_target` 查询，O(1) 复杂度。
 
 *LinkEntry 结构*:
 [source,rust]
 ----
 pub struct LinkEntry {
-    pub source: String,   // 来源文件路径
-    pub target: String,   // 目标文件路径（已解析为绝对路径）
+    pub source: String,        // 来源文件路径
+    pub target: String,        // 目标文件路径（已解析为绝对路径）
     pub anchor: Option<String>,  // 锚点（如 #section-id）
-    pub line: usize,      // 链接所在行号
+    pub line: usize,           // 链接所在行号
 }
 ----
 
-[[get-files-meta]]
-=== get_files_meta
+[[query-forward-links]]
+=== query_forward_links
 
-*参数*: `workspace_root: String`
-*返回*: `Result<Vec<FileMeta>, String>`
+*参数*: `file_path: String`
+*返回*: `Vec<LinkEntry>`
 
-获取工作区内所有文件的元数据（标题 + 关键词）。标题从文件前 10 行中提取 `= ` 标题行；关键词从 `:keywords:` 属性解析。用于知识图谱节点标注和标签系统。
+查询指定文件的正向链接——该文件中引用的所有外部文件。通过 SQLite 索引 `idx_links_source` 查询。
+
+[[query-title]]
+=== query_title
+
+*参数*: `file_path: String`
+*返回*: `Option<String>`
+
+查询指定文件的标题。从 `= Title` 行提取。用于编辑器 `xref:` 补全时异步获取其他文件标题。
+
+[[query-all-tags]]
+=== query_all_tags
+
+*参数*: 无
+*返回*: `Vec<TagCount>`
+
+查询所有标签及其出现次数，按计数降序排列。用于标签云展示。
+
+*TagCount 结构*:
+[source,rust]
+----
+pub struct TagCount {
+    pub tag: String,    // 标签名
+    pub count: usize,   // 出现次数
+}
+----
+
+[[query-files-by-tag]]
+=== query_files_by_tag
+
+*参数*: `tag: String`
+*返回*: `Vec<String>`
+
+查询包含指定标签的所有文件路径。通过 SQLite 索引 `idx_tags_tag` 查询。
+
+[[query-all-files]]
+=== query_all_files
+
+*参数*: 无
+*返回*: `Vec<FileMeta>`
+
+查询工作区内所有文件及其标题。用于文件列表、补全等。
 
 *FileMeta 结构*:
 [source,rust]
 ----
 pub struct FileMeta {
-    pub path: String,        // 文件路径
-    pub title: String,       // 文档标题
-    pub keywords: Vec<String>,  // 关键词列表
+    pub path: String,   // 文件路径
+    pub title: String,  // 文档标题
 }
 ----
 
-[[get-backlinks]]
-=== get_backlinks
+[[query-graph-data]]
+=== query_graph_data
 
-*参数*: `file_path: String, workspace_root: String`
-*返回*: `Result<Vec<LinkEntry>, String>`
+*参数*: 无
+*返回*: `GraphData`
 
-查询指定文件的反向链接——所有引用了该文件的其他文件。扫描工作区内除目标文件外的所有文件，返回匹配的 `LinkEntry` 列表。用于反向链接面板。
+查询知识图谱所需的全部节点和边数据。两次查询组装：一次聚合节点（含连接数），一次获取所有边。
+
+*GraphData 结构*:
+[source,rust]
+----
+pub struct GraphData {
+    pub nodes: Vec<GraphNode>,   // 节点列表
+    pub edges: Vec<GraphEdge>,   // 边列表
+}
+
+pub struct GraphNode {
+    pub id: String,     // 文件路径
+    pub label: String,  // 显示标签（标题）
+    pub links: usize,   // 连接数
+}
+
+pub struct GraphEdge {
+    pub source: String, // 起点路径
+    pub target: String, // 终点路径
+}
+----
+
+[[query-headings]]
+=== query_headings
+
+*参数*: `file_path: String`
+*返回*: `Vec<HeadingEntry>`
+
+查询指定文件的大纲标题列表。从 `= Title` 和 `. Title` 行提取，按行号排序。用于大纲面板展示。
+
+*HeadingEntry 结构*:
+[source,rust]
+----
+pub struct HeadingEntry {
+    pub line: usize,    // 行号
+    pub level: usize,   // 标题级别（1-5）
+    pub text: String,   // 标题文本
+}
+----

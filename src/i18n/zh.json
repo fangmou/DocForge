@@ -153,6 +153,8 @@
   "msg.createDirFailed": "创建文件夹失败:",
   "msg.renderError": "渲染错误: {error}",
 
+  "app.title": "方谋文构",
+
   "toolbar.toggleBacklinks": "反向链接",
   "toolbar.toggleGraph": "知识图谱",
   "toolbar.togglePluginManager": "插件管理",
@@ -168,8 +170,9 @@
   "backlinks.empty": "无反向链接",
 
   "tags.title": "标签",
-  "tags.empty": "使用 :keywords: 属性添加标签",
+  "tags.empty": "在文档头部添加 :keywords: 标签1, 标签2",
   "tags.noFiles": "该标签下无文件",
+  "tags.addPlaceholder": "输入标签，回车添加",
 
   "graph.title": "知识图谱",
   "graph.filterPlaceholder": "过滤节点...",

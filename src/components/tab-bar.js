@@ -151,12 +151,12 @@ class TabBar extends LitElement {
     e.preventDefault();
     e.stopPropagation();
     const items = [
-      { label: t('tab.close'), action: () => this._closeTab(path, { stopPropagation: () => {} }) },
-      { label: t('tab.closeOthers'), action: () => this._closeOthers(path) },
-      { label: t('tab.closeAll'), action: () => this._closeAll() },
+      { icon: '✕', label: t('tab.close'), action: () => this._closeTab(path, { stopPropagation: () => {} }) },
+      { icon: '—', label: t('tab.closeOthers'), action: () => this._closeOthers(path) },
+      { icon: '◯', label: t('tab.closeAll'), action: () => this._closeAll() },
       { separator: true },
-      { label: t('tab.copyPath'), action: () => navigator.clipboard.writeText(path) },
-      { label: t('tab.revealInShell'), action: () => eventBus.emit('reveal-in-shell', path) },
+      { icon: '⎘', label: t('tab.copyPath'), action: () => navigator.clipboard.writeText(path) },
+      { icon: '📂', label: t('tab.revealInShell'), action: () => eventBus.emit('reveal-in-shell', path) },
     ];
     eventBus.emit('show-context-menu', { x: e.clientX, y: e.clientY, items });
   }

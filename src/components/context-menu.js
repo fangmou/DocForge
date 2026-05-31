@@ -25,12 +25,22 @@ class ContextMenu extends LitElement {
     .item {
       padding: 6px 14px;
       font-size: 12px;
+      line-height: 18px;
       color: var(--text-2);
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 8px;
       transition: all 0.1s;
+    }
+    .item .icon {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
     }
     .item:hover {
       background: var(--accent);
@@ -87,7 +97,7 @@ class ContextMenu extends LitElement {
       <div class="menu" @click=${(e) => e.stopPropagation()}>
         ${this.items.map((item) => item.separator
           ? html`<div class="separator"></div>`
-          : html`<div class="item" @click=${() => this._onAction(item.action)}>${item.icon || ''} ${item.label}</div>`
+          : html`<div class="item" @click=${() => this._onAction(item.action)}>${item.icon ? html`<span class="icon">${item.icon}</span>` : ''} ${item.label}</div>`
         )}
       </div>
     `;

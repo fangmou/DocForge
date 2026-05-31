@@ -13,6 +13,9 @@ pub fn run() {
             // 从磁盘加载持久化配置
             let config = commands::config::load_config_from_disk(app.handle());
             app.manage(std::sync::Mutex::new(config));
+            // 初始化链接索引数据库（内存 SQLite）
+            let link_db = services::link_db::LinkDb::new().expect("Failed to init link DB");
+            app.manage(std::sync::Mutex::new(link_db));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -30,8 +33,16 @@ pub fn run() {
             commands::file::list_all_adoc_files,
             commands::file::reveal_in_shell,
             commands::link::build_link_index,
-            commands::link::get_files_meta,
-            commands::link::get_backlinks,
+            commands::link::update_link_file,
+            commands::link::add_tag_to_file,
+            commands::link::query_backlinks,
+            commands::link::query_forward_links,
+            commands::link::query_title,
+            commands::link::query_all_tags,
+            commands::link::query_files_by_tag,
+            commands::link::query_all_files,
+            commands::link::query_graph_data,
+            commands::link::query_headings,
             commands::plugin::list_plugins,
             commands::plugin::read_plugin_file,
             commands::plugin::toggle_plugin,

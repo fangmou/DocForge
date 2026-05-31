@@ -1,0 +1,70 @@
+// 决策记录：文档索引后端化迁移（Rust + SQLite）
+// 2026-05-31
+
+== 背景：双脑问题
+
+系统存在"双脑问题"：Rust 解析文件内容后打包 JSON 通过 IPC 传给 JS，JS 重建 Maps 维护索引。Rust 和 JS 各有一套路径标准化和内容解析逻辑。具体问题：
+
+1. **路径不一致**：Rust `normalize_path` 去掉前导 `/`，JS `_normalizePath` 加回前导 `/`。索引键不匹配导致反向链接完全不工作。
+2. **性能瓶颈**：`get_backlinks` 每次调用都重新扫描所有文件（O(n)），标签查询同理。
+3. **逻辑重复**：链接解析、标题提取、标签管理各有 JS 和 Rust 两套实现。
+
+== 决策：Rust + SQLite 内存数据库
+
+文件内容派生数据统一由 Rust 解析 + SQLite 存储，前端只做薄 IPC 代理。
+
+=== SQLite Schema（4 张表）
+
+|===
+| 表 | 用途 | 关键索引
+
+| `files` | 文件注册 + 标题 | `path` PRIMARY KEY
+| `links` | 正向/反向链接 | `source`, `target`
+| `tags` | 标签多对多 | `(file_path, tag)` PK, `tag`
+| `headings` | 大纲标题 | `file_path`
+|===
+
+PRAGMA 优化：`journal_mode=OFF`, `synchronous=OFF`（内存库无需持久化）。
+
+=== 核心原则
+
+- **唯一事实源是文本文件**：SQLite 是运行时缓存，数据库可随时删除并从文本重建。
+- **单次扫描四种数据**：每个 .adoc 文件只读一次，同时提取链接、标题、标签、大纲。
+- **性能优先**：单事务批量插入，查询走 SQLite 索引。
+
+=== 数据流标准模式
+
+|===
+| 数据分类 | 职责归属 | 说明
+
+| 文件内容派生数据 | 后端 | 链接、标题、标签、大纲 → Rust 解析 + SQLite
+| UI 状态 | 前端 | 标签页、光标、脏标记、面板可见性
+| 纯 IPC 代理 | 已正确 | file-service、search-service、config-service
+| 可视化计算 | 前端 | graph-layout 力导向布局
+|===
+
+此模式适用于所有后续功能：凡是从文件内容派生的数据，一律由后端处理。
+
+=== 前端迁移清单
+
+|===
+| 文件 | 改动
+
+| `link-index.js` | 重写为薄 IPC 代理，只保留 `_titleCache`
+| `outline-panel.js` | 前端正则解析 → `query_headings` IPC
+| `tags-panel.js` | 标签增删走 `add_tag_to_file` IPC
+| `backlinks-panel.js` | `await` 化
+| `graph-view.js` | `await` 化
+| `editor-pane.js` | 移除 `_normalizePath`，路径全由 Rust 处理
+|===
+
+=== IPC 命令变更
+
+删除旧命令：`get_files_meta`、`get_backlinks`（全盘扫描版）。
+
+新增命令（共 11 个）：`build_link_index`、`update_link_file`、`add_tag_to_file`、`query_backlinks`、`query_forward_links`、`query_title`、`query_all_tags`、`query_files_by_tag`、`query_all_files`、`query_graph_data`、`query_headings`。
+
+== 备选方案（未采纳）
+
+- **纯前端优化**：修复路径不一致但保留 JS 索引 → 不解决性能和重复逻辑问题。
+- **Rust 内存 Map**：不用数据库，纯 HashMap → 查询功能需手写索引，复杂度高。

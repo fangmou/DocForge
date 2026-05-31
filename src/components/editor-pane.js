@@ -83,6 +83,17 @@ function asciidocSyntax() {
   };
 }
 
+// 路径规范化（处理 .. 和 .）
+function _normalizePath(p) {
+  const parts = p.split('/');
+  const result = [];
+  for (const part of parts) {
+    if (part === '..') result.pop();
+    else if (part !== '.' && part !== '') result.push(part);
+  }
+  return '/' + result.join('/');
+}
+
 // include:: 文件补全缓存
 let _adocFileCache = null;
 let _adocCacheWs = null;
@@ -187,7 +198,7 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
         if (bracketIdx > pathStart && col >= pathStart && col <= bracketIdx) {
           const linkPath = line.text.slice(pathStart, bracketIdx);
           e.preventDefault();
-          const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
+          const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
           eventBus.emit('open-external-file', resolved);
           return;
         }
@@ -205,7 +216,7 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
           const linkPath = line.text.slice(pathStart, endIdx).split('#')[0];
           if (linkPath && !linkPath.startsWith('http')) {
             e.preventDefault();
-            const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
+            const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
             eventBus.emit('open-external-file', resolved);
           }
           return;
@@ -225,7 +236,7 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
           const linkPath = line.text.slice(idx + 2, refEnd).split('#')[0].trim();
           if (linkPath && !linkPath.startsWith('http')) {
             e.preventDefault();
-            const resolved = linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath);
+            const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
             eventBus.emit('open-external-file', resolved);
           }
           return;
@@ -482,6 +493,7 @@ class EditorPane extends LitElement {
       'font-size-set': (size) => this._setFontSize(size),
       'jump-to-line': (line) => this._jumpToLine(line),
       'file-renamed': ({ oldPath, newPath }) => this._onFileRenamed(oldPath, newPath),
+      'replace-editor-content': (content) => this._replaceContent(content),
       'file-closed': (path) => this._onFileClosed(path),
       'open-external-file': (path) => this._openExternalFile(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
@@ -714,12 +726,27 @@ class EditorPane extends LitElement {
       const content = await readFile(path);
       editorState.openFile(path, content);
       eventBus.emit('file-opened', { path, content });
+      // 链接跳转时自动显示反向链接面板（等索引就绪）
+      const { linkIndex } = await import('../services/link-index.js');
+      if (linkIndex.ready) await linkIndex.ready;
+      const bls = await linkIndex.getBacklinks(path);
+      if (bls.length > 0) {
+        eventBus.emit('show-backlinks');
+      }
       // 记录最近文件
       const { addRecentFile } = await import('../services/config-service.js');
       addRecentFile(path).catch(() => {});
     } catch (e) {
       console.error('打开文件失败:', e);
     }
+  }
+
+  _replaceContent(content) {
+    if (!this._view) return;
+    const doc = this._view.state.doc;
+    this._view.dispatch({
+      changes: { from: 0, to: doc.length, insert: content },
+    });
   }
 
   _setTheme(theme) {

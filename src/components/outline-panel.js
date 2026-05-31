@@ -1,5 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
+import { editorState } from '../services/editor-state.js';
+import { linkIndex } from '../services/link-index.js';
 import { t } from '../services/i18n.js';
 
 class OutlinePanel extends LitElement {
@@ -138,8 +140,10 @@ class OutlinePanel extends LitElement {
       eventBus.emit('outline-panel-toggled', false);
     };
     eventBus.on('force-close-all-panels', this._forceCloseHandler);
-    this._contentHandler = (content) => this._parseHeadings(content);
+    this._contentHandler = () => this._loadHeadings();
     eventBus.on('content-changed', this._contentHandler);
+    this._fileHandler = () => this._loadHeadings();
+    eventBus.on('file-opened', this._fileHandler);
     this._langHandler = () => this.requestUpdate();
     eventBus.on('language-changed', this._langHandler);
   }
@@ -149,28 +153,22 @@ class OutlinePanel extends LitElement {
     if (this._toggleHandler) eventBus.off('toggle-outline', this._toggleHandler);
     if (this._forceCloseHandler) eventBus.off('force-close-all-panels', this._forceCloseHandler);
     if (this._contentHandler) eventBus.off('content-changed', this._contentHandler);
+    if (this._fileHandler) eventBus.off('file-opened', this._fileHandler);
     if (this._langHandler) eventBus.off('language-changed', this._langHandler);
     clearTimeout(this._debounceTimer);
   }
 
-  _parseHeadings(content) {
+  _loadHeadings() {
     clearTimeout(this._debounceTimer);
-    this._debounceTimer = setTimeout(() => {
-      const headings = [];
-      const lines = content.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const m = line.match(/^(=+)\s+(.+)/);
-        if (m) {
-          headings.push({ level: m[1].length, text: m[2], line: i + 1 });
-          continue;
-        }
-        const m2 = line.match(/^(\.{1,5})\s+(.+)/);
-        if (m2) {
-          headings.push({ level: m2[1].length, text: m2[2], line: i + 1 });
-        }
+    this._debounceTimer = setTimeout(async () => {
+      const path = editorState.activeFilePath;
+      if (!path) { this.headings = []; return; }
+      try {
+        if (linkIndex.ready) await linkIndex.ready;
+        this.headings = await linkIndex.getHeadings(path);
+      } catch (_) {
+        this.headings = [];
       }
-      this.headings = headings;
       this.collapsed = new Set();
       this._treeCache = null;
       this._treeCacheHeadings = null;

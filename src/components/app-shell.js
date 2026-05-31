@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
-import { setLanguage } from '../services/i18n.js';
+import { setLanguage, t } from '../services/i18n.js';
 
 class AppShell extends LitElement {
   static properties = {
@@ -126,6 +126,7 @@ class AppShell extends LitElement {
         eventBus.emit('preview-visibility-changed', this.previewVisible);
       },
       'theme-changed': (theme) => { document.documentElement.setAttribute('data-theme', theme); },
+      'language-changed': () => { this._updateTitle(); },
       'reveal-in-shell': async (path) => {
         try { await window.__TAURI__.core.invoke('reveal_in_shell', { path }); } catch (_) {}
       },
@@ -135,14 +136,12 @@ class AppShell extends LitElement {
     for (const [name, handler] of Object.entries(this._handlers)) {
       eventBus.on(name, handler);
     }
-    // 工作区打开时加载插件和链接索引
+    // 工作区打开时加载插件和链接索引（并行，互不阻塞）
     this._wsHandler = async (wsPath) => {
-      try {
-        const { pluginLoader } = await import('../services/plugin-loader.js');
-        await pluginLoader.loadAll(wsPath);
-        const { linkIndex } = await import('../services/link-index.js');
-        await linkIndex.buildIndex(wsPath);
-      } catch (_) {}
+      const { pluginLoader } = await import('../services/plugin-loader.js');
+      const { linkIndex } = await import('../services/link-index.js');
+      pluginLoader.loadAll(wsPath).catch(() => {});
+      linkIndex.buildIndex(wsPath).catch(() => {});
     };
     eventBus.on('workspace-opened', this._wsHandler);
     // 启动时加载配置（语言 + 上次工作区）
@@ -175,6 +174,7 @@ class AppShell extends LitElement {
         await setLanguage(edConfig.language);
         eventBus.emit('language-changed', edConfig.language);
       }
+      this._updateTitle();
       // 恢复侧栏宽度
       if (edConfig.sidebar_width && edConfig.sidebar_width > 0) {
         const sidebar = this.shadowRoot.querySelector('.sidebar');
@@ -189,6 +189,17 @@ class AppShell extends LitElement {
         eventBus.emit('workspace-opened', ws);
       }
     } catch (_) {}
+  }
+
+  _updateTitle() {
+    const title = t('app.title');
+    document.title = title;
+    if (window.__TAURI__) {
+      try {
+        const appWindow = window.__TAURI__.window.getCurrent();
+        if (appWindow) appWindow.setTitle(title);
+      } catch (_) {}
+    }
   }
 
   async _setupDragDrop() {

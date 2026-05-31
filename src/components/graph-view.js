@@ -96,11 +96,9 @@ class GraphView extends LitElement {
   async _buildGraph() {
     try {
       const { linkIndex } = await import('../services/link-index.js');
-      // 确保索引已构建
-      if (linkIndex.getAllFiles().length === 0 && editorState.workspaceRoot) {
-        await linkIndex.buildIndex(editorState.workspaceRoot);
-      }
-      const data = linkIndex.getGraphData();
+      // 确保索引已就绪
+      if (linkIndex.ready) await linkIndex.ready;
+      const data = await linkIndex.getGraphData();
       this._nodes = data.nodes;
       this._edges = data.edges;
       this._nodeMap = new Map(data.nodes.map(n => [n.id, n]));

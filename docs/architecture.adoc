@@ -31,7 +31,7 @@
 │  editor-state / search-service               │
 │  export-service / config-service / i18n      │
 │  asciidoc-attrs / scroll-sync                │
-│  link-index (双向链接+标签索引)               │
+│  link-index (IPC 薄代理)                     │
 │  graph-layout (力导向图谱布局)               │
 │  plugin-loader / plugin-registry (插件系统)  │
 ├──────────────────── Tauri IPC ───────────────┤
@@ -41,8 +41,24 @@
 ├─────────────────────────────────────────────┤
 │           服务层 (Rust Services)              │
 │  ai_client (reqwest + rustls)                │
+│  link_db (SQLite 内存数据库)                  │
+│    · 文件标题 / 双向链接 / 标签 / 大纲       │
+│    · 运行时缓存，唯一事实源为文本文件         │
 └─────────────────────────────────────────────┘
 ....
+
+=== 数据流标准模式
+
+文件内容派生数据（链接、标题、标签、大纲）统一由 Rust 解析 + SQLite 存储，前端只做薄 IPC 代理。UI 状态（标签页、光标、面板可见性）保留在前端。
+
+|===
+| 分类 | 前端职责 | 后端职责
+
+| 文件内容派生数据 | IPC 代理 + 缓存标题 | 解析 + SQLite 存储
+| UI 状态 | 标签页/光标/脏标记 | 无
+| 纯 IPC 代理 | 调用 | 执行（file/search/config）
+| 可视化计算 | graph-layout 力导向布局 | 无
+|===
 
 == IPC 命令
 

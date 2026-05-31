@@ -153,6 +153,8 @@
   "msg.createDirFailed": "Failed to create folder:",
   "msg.renderError": "Render error: {error}",
 
+  "app.title": "DocForge",
+
   "toolbar.toggleBacklinks": "Backlinks",
   "toolbar.toggleGraph": "Knowledge Graph",
   "toolbar.togglePluginManager": "Plugin Manager",
@@ -168,8 +170,9 @@
   "backlinks.empty": "No backlinks",
 
   "tags.title": "Tags",
-  "tags.empty": "Add tags with :keywords: attribute",
+  "tags.empty": "Add :keywords: tag1, tag2 to document header",
   "tags.noFiles": "No files with this tag",
+  "tags.addPlaceholder": "Type tag, Enter to add",
 
   "graph.title": "Knowledge Graph",
   "graph.filterPlaceholder": "Filter nodes...",

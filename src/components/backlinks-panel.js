@@ -104,8 +104,17 @@ class BacklinksPanel extends LitElement {
       if (this.visible) this._loadBacklinks();
     };
     eventBus.on('toggle-backlinks', this._toggleHandler);
+    this._showHandler = () => {
+      if (!this.visible) {
+        this.visible = true;
+        this.classList.add('visible');
+        eventBus.emit('backlinks-panel-toggled', true);
+        this._loadBacklinks();
+      }
+    };
+    eventBus.on('show-backlinks', this._showHandler);
     this._fileHandler = () => {
-      if (this.visible) this._loadBacklinks();
+      this._loadBacklinks();
     };
     eventBus.on('file-opened', this._fileHandler);
     this._forceCloseHandler = () => {
@@ -121,6 +130,7 @@ class BacklinksPanel extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._toggleHandler) eventBus.off('toggle-backlinks', this._toggleHandler);
+    if (this._showHandler) eventBus.off('show-backlinks', this._showHandler);
     if (this._fileHandler) eventBus.off('file-opened', this._fileHandler);
     if (this._forceCloseHandler) eventBus.off('force-close-all-panels', this._forceCloseHandler);
     if (this._langHandler) eventBus.off('language-changed', this._langHandler);
@@ -131,7 +141,8 @@ class BacklinksPanel extends LitElement {
     if (!path) { this.backlinks = []; return; }
     try {
       const { linkIndex } = await import('../services/link-index.js');
-      this.backlinks = linkIndex.getBacklinks(path);
+      if (linkIndex.ready) await linkIndex.ready;
+      this.backlinks = await linkIndex.getBacklinks(path);
     } catch (_) {
       this.backlinks = [];
     }
