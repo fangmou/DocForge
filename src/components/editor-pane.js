@@ -1,7 +1,7 @@
 import { LitElement, css } from 'lit';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, ViewPlugin, Decoration } from '@codemirror/view';
-import { EditorState, Compartment, RangeSetBuilder } from '@codemirror/state';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { EditorState, Compartment, RangeSetBuilder, Transaction } from '@codemirror/state';
+import { history, indentWithTab, undo, redo, standardKeymap, selectAll, moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, indentMore, indentLess, indentSelection, cursorMatchingBracket, insertBlankLine, addCursorAbove, addCursorBelow, selectLine, selectParentSyntax } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
@@ -9,9 +9,11 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } 
 import { StreamLanguage } from '@codemirror/language';
 import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
-import { writeFile, pickSaveFile, readFile, getFileMtime } from '../services/file-service.js';
+import { writeFile, pickSaveFile, readFile, getFileMtime, deleteFile } from '../services/file-service.js';
 import { t } from '../services/i18n.js';
+import { showConfirm } from '../services/dialog.js';
 import { setEditorSync, syncPreview } from '../services/scroll-sync.js';
+import { getFormat, wrapInline, toggleLineComment, toggleBlockComment, insertHeading, toggleList, insertBlock, insertAdocLink, insertMdLink, alignAdocTable, insertSnippet } from '../services/format-commands.js';
 
 function asciidocSyntax() {
   return {
@@ -120,6 +122,8 @@ const includeDeco = Decoration.mark({ class: 'cm-include-link' });
 const xrefDeco = Decoration.mark({ class: 'cm-include-link' });
 
 function buildLinkDecorations(state) {
+  // Markdown 文件不需要 include/xref 装饰
+  if (_currentFormatId === 'md') return Decoration.none;
   const builder = new RangeSetBuilder();
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
@@ -435,6 +439,11 @@ async function asciidocCompletions(context) {
 const themeCompartment = new Compartment();
 const wrapCompartment = new Compartment();
 const keymapCompartment = new Compartment();
+const languageCompartment = new Compartment();
+const completionCompartment = new Compartment();
+
+// 当前格式 ID（供模块级函数访问）
+let _currentFormatId = null;
 
 class EditorPane extends LitElement {
   static styles = css`
@@ -462,21 +471,51 @@ class EditorPane extends LitElement {
     .cm-editor ::-webkit-scrollbar-thumb:hover {
       background: var(--border-medium);
     }
+    /* 跳转行号浮动输入框 */
+    .goto-line-overlay {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      background: var(--bg-3);
+      border: 1px solid var(--border-medium);
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      padding: 4px;
+    }
+    .goto-line-overlay input {
+      width: 220px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 4px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      outline: none;
+    }
+    .goto-line-overlay input::placeholder {
+      color: var(--text-3);
+    }
   `;
 
   constructor() {
     super();
     this._view = null;
     this._currentPath = null;
+    this._currentFormat = null;
     this._updatingFromExternal = false;
     this._handlers = {};
     this._autoSaveTimer = null;
     this._fontSize = 14;
     this._autoSaveDelay = 3000;
     this._fileMtime = null;
+    this._untitledCounter = 0;
     this._ignoreScroll = false;
     this._previewVisible = true;
     this._lastScrollTop = 0;
+    this._lastSwitchedFormat = null;
   }
 
   connectedCallback() {
@@ -496,10 +535,54 @@ class EditorPane extends LitElement {
       'file-renamed': ({ oldPath, newPath }) => this._onFileRenamed(oldPath, newPath),
       'replace-editor-content': (content) => this._replaceContent(content),
       'file-closed': (path) => this._onFileClosed(path),
+      'editor-undo': () => { if (this._view) undo(this._view); },
+      'editor-redo': () => { if (this._view) redo(this._view); },
+      'editor-select-all': () => { if (this._view) selectAll(this._view); },
+      'editor-toggle-comment': () => { this._toggleComment(); },
+      'editor-toggle-block-comment': () => { this._toggleBlockComment(); },
+      'editor-move-line-up': () => { if (this._view) moveLineUp(this._view); },
+      'editor-move-line-down': () => { if (this._view) moveLineDown(this._view); },
+      'editor-copy-line-up': () => { if (this._view) copyLineUp(this._view); },
+      'editor-copy-line-down': () => { if (this._view) copyLineDown(this._view); },
+      'editor-delete-line': () => { if (this._view) deleteLine(this._view); },
+      'editor-indent-more': () => { if (this._view) indentMore(this._view); },
+      'editor-indent-less': () => { if (this._view) indentLess(this._view); },
+      'editor-indent-selection': () => { if (this._view) indentSelection(this._view); },
+      'editor-matching-bracket': () => { if (this._view) cursorMatchingBracket(this._view); },
+      'editor-insert-blank-line': () => { if (this._view) insertBlankLine(this._view); },
+      'editor-add-cursor-above': () => { if (this._view) addCursorAbove(this._view); },
+      'editor-add-cursor-below': () => { if (this._view) addCursorBelow(this._view); },
+      'editor-select-line': () => { if (this._view) selectLine(this._view); },
+      'editor-select-parent-syntax': () => { if (this._view) selectParentSyntax(this._view); },
+      // 格式感知的标记操作
+      'editor-markup-inline': ({ id }) => { this._wrapInlineMarkup(id); },
+      'editor-markup-link': () => { this._insertLink(); },
+      'editor-heading': (level) => { this._insertHeading(level); },
+      'editor-list': (marker) => { if (this._view) toggleList(this._view, marker); },
+      'editor-insert-block': ({ id }) => { this._insertBlockById(id); },
+      'editor-align-table': () => { this._alignTable(); },
+      'editor-insert-snippet': ({ template, isInline }) => { if (this._view) insertSnippet(this._view, template, isInline); },
+      'goto-line': () => this._showGotoLine(),
       'open-external-file': (path) => this._openExternalFile(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
       'workspace-opened': () => { _adocFileCache = null; },
       'file-saved': () => { _adocFileCache = null; },
+      'restore-editor-state': ({ scrollTop, cursorPos }) => {
+        if (!this._view) return;
+        requestAnimationFrame(() => {
+          const pos = Math.min(cursorPos || 0, this._view.state.doc.length);
+          this._view.dispatch({
+            selection: { anchor: pos },
+            scrollIntoView: true,
+          });
+          if (scrollTop) {
+            requestAnimationFrame(() => {
+              const scroller = this._view.scrollDOM;
+              if (scroller) scroller.scrollTop = scrollTop;
+            });
+          }
+        });
+      },
     };
     for (const [name, handler] of Object.entries(this._handlers)) {
       eventBus.on(name, handler);
@@ -535,8 +618,6 @@ class EditorPane extends LitElement {
     container.style.cssText = 'height:100%;overflow:hidden;';
     this.shadowRoot.appendChild(container);
 
-    const adocLang = StreamLanguage.define(asciidocSyntax());
-
     this._view = new EditorView({
       state: EditorState.create({
         doc: t('editor.placeholder'),
@@ -551,28 +632,20 @@ class EditorPane extends LitElement {
           bracketMatching(),
           closeBrackets(),
           rectangularSelection(),
-          autocompletion({ override: [asciidocCompletions] }),
+          completionCompartment.of(autocompletion({ override: [asciidocCompletions] })),
           search(),
           includeLinkPlugin,
           wrapCompartment.of([]),
           keymap.of([
-            ...defaultKeymap,
-            ...historyKeymap,
+            ...standardKeymap,
             ...searchKeymap.filter(b => b.key !== 'Mod-g'),
             ...closeBracketsKeymap,
             ...completionKeymap,
             indentWithTab,
           ]),
-          // 自定义快捷键（通过 Compartment 动态更新）
-          keymapCompartment.of(keymap.of([
-            { key: 'Mod-s', run: () => { this._saveFile(); return true; } },
-            { key: 'Mod-Shift-f', run: () => { eventBus.emit('toggle-search'); return true; } },
-            { key: 'Mod-g', run: () => { this._showGotoLine(); return true; } },
-            { key: 'Mod-=', run: () => { this._adjustFontSize(1); return true; } },
-            { key: 'Mod--', run: () => { this._adjustFontSize(-1); return true; } },
-            { key: 'Mod-0', run: () => { this._setFontSize(14); return true; } },
-          ])),
-          adocLang,
+          // 自定义快捷键（通过 Compartment 动态更新，_loadConfig 中实际注册）
+          keymapCompartment.of(keymap.of([])),
+          languageCompartment.of(StreamLanguage.define(asciidocSyntax())),
           syntaxHighlighting(defaultHighlightStyle),
           themeCompartment.of([]),
           EditorView.updateListener.of((update) => {
@@ -643,7 +716,7 @@ class EditorPane extends LitElement {
       this._fontSize = config.font_size;
       this._setFontSize(config.font_size);
       if (config.word_wrap) this._toggleWrap();
-      if (config.auto_save_interval > 0) this._autoSaveDelay = config.auto_save_interval;
+      if (config.auto_save_interval > 0) this._autoSaveDelay = config.auto_save_interval * 1000;
     } catch (e) { /* 使用默认值 */ }
     // 从快捷键注册中心加载自定义快捷键
     try {
@@ -655,16 +728,103 @@ class EditorPane extends LitElement {
   _applyShortcutKeymap(sr) {
     if (!this._view) return;
     const bindings = [
-      { key: sr.getCmKey('save') || 'Mod-s',        run: () => { this._saveFile(); return true; } },
+      { key: sr.getCmKey('undo') || 'Mod-z',         run: () => { if (this._view) undo(this._view); return true; } },
+      { key: sr.getCmKey('redo') || 'Mod-Shift-z',   run: () => { if (this._view) redo(this._view); return true; } },
+      { key: sr.getCmKey('save') || 'Mod-s',          run: () => { this._saveFile(); return true; } },
       { key: sr.getCmKey('search') || 'Mod-Shift-f', run: () => { eventBus.emit('toggle-search'); return true; } },
       { key: sr.getCmKey('gotoLine') || 'Mod-g',     run: () => { this._showGotoLine(); return true; } },
       { key: sr.getCmKey('zoomIn') || 'Mod-=',       run: () => { this._adjustFontSize(1); return true; } },
       { key: sr.getCmKey('zoomOut') || 'Mod--',      run: () => { this._adjustFontSize(-1); return true; } },
       { key: sr.getCmKey('zoomReset') || 'Mod-0',    run: () => { this._setFontSize(14); return true; } },
+      // 注释快捷键
+      { key: sr.getCmKey('toggleLineComment') || 'Mod-/', run: () => { this._toggleComment(); return true; } },
+      { key: sr.getCmKey('toggleBlockComment') || 'Mod-Shift-/', run: () => { this._toggleBlockComment(); return true; } },
+      // 标记快捷键
+      { key: sr.getCmKey('markupBold') || 'Mod-b',   run: () => { this._wrapInlineMarkup('bold'); return true; } },
+      { key: sr.getCmKey('markupItalic') || 'Mod-i', run: () => { this._wrapInlineMarkup('italic'); return true; } },
+      { key: sr.getCmKey('markupMono') || 'Mod-Shift-`', run: () => { this._wrapInlineMarkup('mono'); return true; } },
+      { key: sr.getCmKey('markupLink') || 'Mod-k',   run: () => { this._insertLink(); return true; } },
+      { key: sr.getCmKey('alignTable') || 'Alt-Shift-t', run: () => { this._alignTable(); return true; } },
     ].filter(b => b.key);
     this._view.dispatch({
       effects: keymapCompartment.reconfigure(keymap.of(bindings)),
     });
+  }
+
+  // ─── 格式感知的标记操作辅助方法 ───
+
+  _updateFormat(path) {
+    this._currentFormat = getFormat(path);
+    // untitled 文件默认为 AsciiDoc 格式
+    if (!this._currentFormat && path?.startsWith('__untitled_')) {
+      this._currentFormat = getFormat('placeholder.adoc');
+    }
+    _currentFormatId = this._currentFormat?.id || null;
+    eventBus.emit('file-format-changed', this._currentFormat);
+    this._switchLanguage();
+  }
+
+  async _switchLanguage() {
+    if (!this._view) return;
+    const targetFormat = this._currentFormat?.id;
+    if (this._lastSwitchedFormat === targetFormat) return;
+    if (targetFormat === 'md') {
+      const { markdown } = await import('@codemirror/lang-markdown');
+      // await 后格式可能已再次切换，检查是否仍然需要 md
+      if (this._currentFormat?.id !== 'md') return;
+      this._lastSwitchedFormat = 'md';
+      this._view.dispatch({
+        effects: [
+          languageCompartment.reconfigure(markdown()),
+          completionCompartment.reconfigure(autocompletion({ override: [] })),
+        ],
+      });
+    } else {
+      this._lastSwitchedFormat = targetFormat || 'adoc';
+      this._view.dispatch({
+        effects: [
+          languageCompartment.reconfigure(StreamLanguage.define(asciidocSyntax())),
+          completionCompartment.reconfigure(autocompletion({ override: [asciidocCompletions] })),
+        ],
+      });
+    }
+  }
+
+  _toggleComment() {
+    if (!this._view || !this._currentFormat?.comment?.line) return;
+    toggleLineComment(this._view, this._currentFormat.comment.line);
+  }
+
+  _toggleBlockComment() {
+    if (!this._view || !this._currentFormat?.comment) return;
+    toggleBlockComment(this._view, this._currentFormat.comment.blockOpen, this._currentFormat.comment.blockClose);
+  }
+
+  _wrapInlineMarkup(id) {
+    if (!this._view || !this._currentFormat) return;
+    const def = this._currentFormat.inlineMarkup.find(m => m.id === id);
+    if (def) wrapInline(this._view, def.open, def.close, t('markup.placeholder'));
+  }
+
+  _insertLink() {
+    if (!this._view || !this._currentFormat?.linkInsert) return;
+    this._currentFormat.linkInsert(this._view);
+  }
+
+  _insertHeading(level) {
+    if (!this._view || !this._currentFormat?.heading) return;
+    insertHeading(this._view, this._currentFormat.heading.prefix, level);
+  }
+
+  _insertBlockById(id) {
+    if (!this._view || !this._currentFormat?.blocks) return;
+    const def = this._currentFormat.blocks.find(b => b.id === id);
+    if (def) insertBlock(this._view, def.before, def.after, '');
+  }
+
+  _alignTable() {
+    if (!this._view || !this._currentFormat?.tableAlign) return;
+    this._currentFormat.tableAlign(this._view);
   }
 
   _adjustFontSize(delta) {
@@ -705,13 +865,49 @@ class EditorPane extends LitElement {
     this._view.focus();
   }
 
-  // Ctrl+G 跳转到行
+  // Ctrl+G 跳转到行 — 内联浮动输入框
   _showGotoLine() {
-    const input = prompt(t('editor.gotoLinePrompt'));
-    if (!input) return;
-    const line = parseInt(input);
-    if (isNaN(line) || line < 1) return;
-    this._jumpToLine(line);
+    if (!this._view) return;
+    // 已有则聚焦
+    if (this._gotoLineEl) {
+      this._gotoLineEl.querySelector('input')?.focus();
+      return;
+    }
+    const curLine = this._view.state.doc.lineAt(this._view.state.selection.main.head).number;
+    const total = this._view.state.doc.lines;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'goto-line-overlay';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = `${t('editor.gotoLinePrompt')} (${curLine}/${total})`;
+    overlay.appendChild(input);
+
+    const close = () => {
+      this._gotoLineEl = null;
+      overlay.remove();
+      this._view?.focus();
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // 阻止 CM6 捕获按键
+      if (e.key === 'Enter') {
+        const line = parseInt(input.value.trim());
+        if (!isNaN(line) && line >= 1) this._jumpToLine(line);
+        close();
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    });
+    input.addEventListener('blur', () => close());
+
+    const container = this.shadowRoot.querySelector('div');
+    if (container) {
+      container.style.position = 'relative';
+      container.appendChild(overlay);
+    }
+    this._gotoLineEl = overlay;
+    requestAnimationFrame(() => input.focus());
   }
 
   _openFindReplace() {
@@ -724,17 +920,20 @@ class EditorPane extends LitElement {
     this._view.dispatch({
       changes: { from: 0, to: this._view.state.doc.length, insert: content },
       selection: { anchor: 0 },
+      annotations: Transaction.addToHistory.of(false),
     });
     this._updatingFromExternal = false;
   }
 
   async _openFile(path, content) {
+    clearTimeout(this._autoSaveTimer);
     this._currentPath = path;
     this._setEditorContent(content);
     eventBus.emit('content-changed', content);
+    this._updateFormat(path);
     // 记录文件 mtime 用于外部修改检测
     this._fileMtime = null;
-    if (!path.startsWith('__untitled_')) {
+    if (path && !path.startsWith('__untitled_')) {
       try {
         this._fileMtime = await getFileMtime(path);
       } catch (_) {}
@@ -756,7 +955,7 @@ class EditorPane extends LitElement {
       }
       // 记录最近文件
       const { addRecentFile } = await import('../services/config-service.js');
-      addRecentFile(path).catch(() => {});
+      addRecentFile(path, editorState.workspaceRoot || undefined).catch(() => {});
     } catch (e) {
       console.error('打开文件失败:', e);
     }
@@ -793,20 +992,27 @@ class EditorPane extends LitElement {
     // 新文件或未保存的临时文件，弹出另存为
     if (!this._currentPath || this._currentPath.startsWith('__untitled_')) {
       try {
-        const dir = editorState.workspaceRoot || '';
-        const defaultName = dir ? `${dir}/untitled.adoc` : 'untitled.adoc';
-        const savePath = await pickSaveFile(defaultName);
+        const dir = this._getDefaultSaveDir();
+        const ext = this._currentFormat?.id === 'md' ? 'md' : 'adoc';
+        const name = this._extractTitle(content) || 'untitled';
+        const defaultName = `${name}.${ext}`;
+        const savePath = await pickSaveFile(dir, defaultName);
         if (!savePath) return;
         await writeFile(savePath, content);
+        if (!savePath) return;
+        await writeFile(savePath, content);
+        // 记住旧路径用于清理 draft
+        const oldPath = this._currentPath;
         // 关闭旧的 untitled 条目
-        if (this._currentPath && this._currentPath.startsWith('__untitled_')) {
-          editorState.closeFile(this._currentPath);
+        if (oldPath && oldPath.startsWith('__untitled_')) {
+          editorState.closeFile(oldPath);
         }
         this._currentPath = savePath;
         editorState.openFile(savePath, content);
         editorState.markSaved(savePath);
         eventBus.emit('file-saved', { path: savePath, content });
         if (editorState.workspaceRoot) eventBus.emit('workspace-opened', editorState.workspaceRoot);
+        this._cleanupDraft(oldPath);
         this._fileMtime = await getFileMtime(savePath).catch(() => null);
       } catch (e) {
         console.error('保存失败:', e);
@@ -819,9 +1025,75 @@ class EditorPane extends LitElement {
       editorState.markSaved(this._currentPath);
       eventBus.emit('file-saved', { path: this._currentPath, content });
       this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
+      this._cleanupDraft();
     } catch (e) {
       console.error('保存失败:', e);
     }
+  }
+
+  /** 文件保存后清理对应的 draft 文件 */
+  async _cleanupDraft(extraPath) {
+    const paths = new Set([this._currentPath]);
+    if (extraPath) paths.add(extraPath);
+    if (!paths.size) return;
+    try {
+      const { loadWorkspaceState, saveWorkspaceState } = await import('../services/config-service.js');
+      const ws = editorState.workspaceRoot;
+      if (!ws) return;
+      const wsState = await loadWorkspaceState(ws);
+      if (!wsState || !wsState.tabs) return;
+      let changed = false;
+      for (const tab of wsState.tabs) {
+        if (paths.has(tab.path) && tab.draft_path) {
+          try { await deleteFile(tab.draft_path); } catch (_) {}
+          tab.draft_path = '';
+          tab.is_dirty = false;
+          changed = true;
+        }
+      }
+      if (changed) await saveWorkspaceState(ws, wsState);
+    } catch (_) {}
+  }
+
+  /** 从内容提取第一个标题作为文件名（去掉不合法字符） */
+  _extractTitle(content) {
+    if (!content) return null;
+    for (const line of content.split('\n')) {
+      const t = line.trim();
+      // AsciiDoc: = Title 或 == Title（取第一个 =）
+      const adoc = t.match(/^={1,2}\s+(.+)$/);
+      if (adoc) return adoc[1].replace(/[/\\:*?"<>|]/g, '_').trim();
+      // Markdown: # Title
+      const md = t.match(/^#\s+(.+)$/);
+      if (md) return md[1].replace(/[/\\:*?"<>|]/g, '_').trim();
+    }
+    return null;
+  }
+
+  /** 获取默认保存目录：
+   *  1. 当前活动文件所在目录（非 untitled）
+   *  2. 其他已打开的非 untitled tab 所在目录
+   *  3. 文件树最近展开的目录
+   *  4. 工作区根目录 */
+  _getDefaultSaveDir() {
+    // 从所有已打开 tab 中找第一个非 untitled 的路径
+    const candidates = [editorState.activeFilePath, ...editorState.tabOrder];
+    for (const p of candidates) {
+      if (p && !p.startsWith('__untitled_')) {
+        const idx = p.lastIndexOf('/');
+        if (idx > 0) return p.substring(0, idx);
+      }
+    }
+    const fileTree = document.querySelector('sidebar-filetree');
+    if (fileTree?.expanded?.size) {
+      // expanded 是 Set，顺序为插入序，取最后一个即最近展开的
+      const arr = Array.from(fileTree.expanded);
+      // 过滤掉根目录本身，优先用子目录
+      const sub = arr.filter(d => d !== editorState.workspaceRoot);
+      if (sub.length) return sub[sub.length - 1];
+      return arr[arr.length - 1];
+    }
+    return editorState.workspaceRoot || '';
   }
 
   // 一键新建空白文档
@@ -835,17 +1107,21 @@ class EditorPane extends LitElement {
   }
 
   _createUntitled(content) {
-    const path = `__untitled_${Date.now()}`;
+    clearTimeout(this._autoSaveTimer);
+    this._untitledCounter++;
+    const path = `__untitled_${this._untitledCounter}_${Date.now()}`;
     this._currentPath = path;
     editorState.openFile(path, content);
     this._setEditorContent(content);
     eventBus.emit('content-changed', content);
+    this._updateFormat(path);
     this._view?.focus();
   }
 
   _onFileRenamed(oldPath, newPath) {
     if (this._currentPath === oldPath) {
       this._currentPath = newPath;
+      this._updateFormat(newPath);
     }
   }
 
@@ -868,7 +1144,7 @@ class EditorPane extends LitElement {
     try {
       const mtime = await getFileMtime(this._currentPath);
       if (mtime !== this._fileMtime) {
-        const reload = confirm(t('editor.fileChanged'));
+        const reload = await showConfirm(t('editor.fileChanged'));
         if (reload) {
           const content = await readFile(this._currentPath);
           this._setEditorContent(content);

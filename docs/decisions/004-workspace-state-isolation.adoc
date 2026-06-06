@@ -1,0 +1,60 @@
+= 004 — 工作空间状态隔离
+
+== 日期
+2026-06-05
+
+== 背景
+
+切换工作区后，打开的标签页（tabs）、最近文件列表、导出历史都是全局混用的。切换后 tabs 丢失，最近文件和导出记录混杂在一起。需要让这些状态与工作区绑定，切换时自动保存/恢复，类似 Obsidian、Sublime Text 的做法。
+
+== 决策
+
+=== 1. 每个工作区状态存独立文件
+
+*选择*: `{app_config_dir}/workspaces/{hash}.json`
+
+*原因*: 工作区状态嵌在 `docforge-config.json` 中会导致配置文件膨胀，且每次保存都要序列化整个配置。独立文件保持配置文件小巧，读写只涉及单个文件，清理时直接删除。
+
+=== 2. 未保存内容用独立 draft 文件
+
+*选择*: `{app_config_dir}/workspace-drafts/{hash}/{idx}.adoc`，前端通过 `write_file`/`read_file` 直接管理
+
+*备选方案*:
+- A) 将未保存内容存进配置 JSON → 配置文件膨胀，大文件场景性能差
+- B) Rust 端统一管理 draft → IPC 需要传递大量文本内容
+
+*原因*: 前端管理 draft 文件使 Rust IPC 命令保持轻量（只存元数据），利用已有的 `write_file`/`read_file` 基础设施，无需新增复杂的 draft 管理 IPC。
+
+=== 3. 最近文件和导出历史按工作区隔离
+
+*选择*: 废弃全局 `recent_files`/`export_history`，仅按工作区存储
+
+*备选方案*: 全局 + 工作区双写 → 逻辑复杂，容易不一致
+
+*原因*: 用户心智模型中"最近文件"和"导出历史"天然属于当前项目/工作区。按工作区隔离后逻辑更简单，无需双写。
+
+=== 4. 防抖自动保存
+
+*选择*: 前端订阅 `editorState.onChange`，2 秒防抖调用 `save_workspace_state`
+
+*原因*: `beforeunload` 事件无法可靠执行异步操作。防抖保存确保窗口意外关闭时数据大部分不丢失。切换工作区期间通过 `_wsSwitching` 标志位跳过防抖保存，避免竞争。
+
+== 隔离范围
+
+- 标签页（打开的文件、顺序、活动文件、光标/滚动位置）
+- 最近文件列表
+- 导出历史
+
+== 未隔离（仍为全局）
+
+- 编辑器配置（字号、主题、快捷键等）
+- AI 配置
+- 导出工具配置（pandoc、asciidoctor-pdf 路径等）
+- 链接索引数据库（内存 SQLite，按 `buildIndex(workspaceRoot)` 隔离）
+
+== 关键文件
+
+- `src-tauri/src/models/config.rs` — TabState、WorkspaceState 结构体
+- `src-tauri/src/commands/config.rs` — 新增 save/load 命令 + 修改 recent/export 命令
+- `src/components/app-shell.js` — 工作区切换核心逻辑（保存→清空→恢复）
+- `src/services/editor-state.js` — serialize/deserialize 方法

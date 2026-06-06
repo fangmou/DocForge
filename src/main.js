@@ -14,6 +14,7 @@ import './components/status-bar.js';
 import './components/settings-dialog.js';
 import './components/backlinks-panel.js';
 import './components/tags-panel.js';
+import './components/export-history-panel.js';
 import './components/graph-view.js';
 import './components/plugin-manager-panel.js';
 import './components/app-shell.js';

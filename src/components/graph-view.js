@@ -83,14 +83,24 @@ class GraphView extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._toggleHandler = async () => {
-      this.visible = !this.visible;
+      const willOpen = !this.visible;
+      if (willOpen) eventBus.emit('force-close-all-panels');
+      this.visible = willOpen;
       this.classList.toggle('visible', this.visible);
+      eventBus.emit('graph-panel-toggled', this.visible);
       if (this.visible) {
         await this._buildGraph();
         this.updateComplete.then(() => this._draw());
       }
     };
     eventBus.on('toggle-graph-view', this._toggleHandler);
+    this._forceCloseHandler = () => {
+      if (!this.visible) return;
+      this.visible = false;
+      this.classList.remove('visible');
+      eventBus.emit('graph-panel-toggled', false);
+    };
+    eventBus.on('force-close-all-panels', this._forceCloseHandler);
   }
 
   async _buildGraph() {
@@ -220,6 +230,7 @@ class GraphView extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._toggleHandler) eventBus.off('toggle-graph-view', this._toggleHandler);
+    if (this._forceCloseHandler) eventBus.off('force-close-all-panels', this._forceCloseHandler);
     if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
 
@@ -252,6 +263,7 @@ class GraphView extends LitElement {
             eventBus.emit('file-opened', { path: node.id, content });
             this.visible = false;
             this.classList.remove('visible');
+            eventBus.emit('graph-panel-toggled', false);
           } catch (_) {}
         })();
         return;
@@ -270,7 +282,7 @@ class GraphView extends LitElement {
           @input=${(e) => { this.filter = e.target.value; this._draw(); }}
         />
         <span style="color:var(--text-3);font-size:11px">${this._nodes.length} ${t('graph.nodeCount')} · ${this._edges.length} ${t('graph.edgeCount')}</span>
-        <span class="close" @click=${() => { this.visible = false; this.classList.remove('visible'); }}>✕</span>
+        <span class="close" @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('graph-panel-toggled', false); }}>✕</span>
       </div>
       <canvas
         @mousedown=${this._onMouseDown}

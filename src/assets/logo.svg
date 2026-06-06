@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Ultra-vibrant modern forge gradient -->
+    <linearGradient id="primaryOrange" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF4500" />
+      <stop offset="100%" stop-color="#FFA500" />
+    </linearGradient>
+  </defs>
+
+  <!-- Extremely bold, chunky geometric shapes. 
+       No thin lines, no dash arrays, no tiny nodes.
+       Designed for maximum high-contrast visibility at 16x16, 32x32 up to 1024x1024. -->
+  <g>
+    <!-- 1. Top Diamond (Solid, thick floating node) -->
+    <polygon 
+      points="256,70 380,140 256,210 132,140" 
+      fill="url(#primaryOrange)" 
+    />
+    
+    <!-- 2. Bottom Anvil Base (Heavy, thick solid foundation) -->
+    <path 
+      d="M 132 300 
+         L 256 230 
+         L 380 300 
+         L 330 390 
+         H 182 
+         Z" 
+      fill="url(#primaryOrange)" 
+    />
+  </g>
+</svg>

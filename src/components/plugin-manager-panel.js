@@ -107,8 +107,11 @@ class PluginManagerPanel extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._toggleHandler = async () => {
-      this.visible = !this.visible;
+      const willOpen = !this.visible;
+      if (willOpen) eventBus.emit('force-close-all-panels');
+      this.visible = willOpen;
       this.classList.toggle('visible', this.visible);
+      eventBus.emit('plugin-panel-toggled', this.visible);
       if (this.visible) {
         // 从 Rust 端获取完整信息（包含 enabled 状态）
         const ws = editorState.workspaceRoot;
@@ -125,11 +128,22 @@ class PluginManagerPanel extends LitElement {
       }
     };
     eventBus.on('toggle-plugin-manager', this._toggleHandler);
+    this._forceCloseHandler = () => {
+      if (!this.visible) return;
+      this.visible = false;
+      this.classList.remove('visible');
+      eventBus.emit('plugin-panel-toggled', false);
+    };
+    eventBus.on('force-close-all-panels', this._forceCloseHandler);
     this._clickOutside = (e) => {
-      if (this.visible && !e.composedPath().includes(this)) {
-        this.visible = false;
-        this.classList.remove('visible');
-      }
+      if (!this.visible) return;
+      const path = e.composedPath();
+      // 点击面板内部或工具栏 → 不关闭
+      if (path.includes(this)) return;
+      if (path.some(el => el.nodeType === Node.ELEMENT_NODE && el.tagName === 'TOOLBAR-MAIN')) return;
+      this.visible = false;
+      this.classList.remove('visible');
+      eventBus.emit('plugin-panel-toggled', false);
     };
     document.addEventListener('click', this._clickOutside);
   }
@@ -137,6 +151,7 @@ class PluginManagerPanel extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._toggleHandler) eventBus.off('toggle-plugin-manager', this._toggleHandler);
+    if (this._forceCloseHandler) eventBus.off('force-close-all-panels', this._forceCloseHandler);
     document.removeEventListener('click', this._clickOutside);
   }
 
@@ -158,7 +173,7 @@ class PluginManagerPanel extends LitElement {
     return html`
       <div class="header">
         <span>🧩 ${t('plugin.title')}</span>
-        <span class="close" @click=${(e) => { e.stopPropagation(); this.visible = false; this.classList.remove('visible'); }}>✕</span>
+        <span class="close" @click=${(e) => { e.stopPropagation(); this.visible = false; this.classList.remove('visible'); eventBus.emit('plugin-panel-toggled', false); }}>✕</span>
       </div>
       <div class="list">
         ${this.plugins.length === 0

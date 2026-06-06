@@ -128,7 +128,9 @@ class OutlinePanel extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._toggleHandler = () => {
-      this.visible = !this.visible;
+      const willOpen = !this.visible;
+      if (willOpen) eventBus.emit('force-close-all-panels');
+      this.visible = willOpen;
       this.classList.toggle('visible', this.visible);
       eventBus.emit('outline-panel-toggled', this.visible);
     };

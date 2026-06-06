@@ -7,6 +7,15 @@ import { t } from '../services/i18n.js';
 import { buildAttributes } from '../services/asciidoc-attrs.js';
 
 let asciidoctor = null;
+let markedInstance = null;
+
+async function getMarked() {
+  if (!markedInstance) {
+    const { marked } = await import('marked');
+    markedInstance = marked;
+  }
+  return markedInstance;
+}
 
 class PreviewPane extends LitElement {
   static properties = {
@@ -20,6 +29,30 @@ class PreviewPane extends LitElement {
       overflow-y: auto;
       height: 100%;
       background: var(--bg-1);
+    }
+    .close-bar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      justify-content: flex-end;
+      z-index: 10;
+      height: 0;
+      pointer-events: none;
+    }
+    .close-btn {
+      pointer-events: auto;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-3);
+      font-size: 14px;
+      padding: 4px 8px;
+      opacity: 0.5;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .close-btn:hover {
+      opacity: 1;
+      color: var(--text-1);
     }
     .placeholder {
       color: var(--text-3);
@@ -141,6 +174,7 @@ class PreviewPane extends LitElement {
     this._debounceTimer = null;
     this._ignoreScroll = false;
     this._visible = true;
+    this._currentFormat = null;
   }
 
   async connectedCallback() {
@@ -164,6 +198,15 @@ class PreviewPane extends LitElement {
     this.addEventListener('scroll', this._scrollHandler, { passive: true });
     this._visHandler = (v) => { this._visible = v; };
     eventBus.on('preview-visibility-changed', this._visHandler);
+    this._formatHandler = (format) => {
+      this._currentFormat = format;
+      if (this._lastContent) this._render(this._lastContent);
+    };
+    eventBus.on('file-format-changed', this._formatHandler);
+    // 初始化时同步当前格式（编辑器可能已打开文件）
+    this._currentFormat = editorState.activeFilePath
+      ? (await import('../services/format-commands.js')).getFormat(editorState.activeFilePath)
+      : null;
   }
 
   disconnectedCallback() {
@@ -173,6 +216,7 @@ class PreviewPane extends LitElement {
     setPreviewSync(null);
     if (this._scrollHandler) this.removeEventListener('scroll', this._scrollHandler);
     if (this._visHandler) eventBus.off('preview-visibility-changed', this._visHandler);
+    if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
     clearTimeout(this._debounceTimer);
   }
 
@@ -180,32 +224,38 @@ class PreviewPane extends LitElement {
     this._lastContent = content;
     clearTimeout(this._debounceTimer);
     this._debounceTimer = setTimeout(async () => {
-      if (!asciidoctor) return;
+      const isMd = this._currentFormat?.id === 'md';
       try {
-        // 解析 include 指令
-        let resolved = content;
-        const activePath = editorState.activeFilePath;
-        if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
-          try {
-            const { resolveIncludes } = await import('../services/export-service.js');
-            const dir = activePath.replace(/\/[^/]+$/, '');
-            resolved = await resolveIncludes(content, dir);
-          } catch (_) {}
+        if (isMd) {
+          const marked = await getMarked();
+          this.renderedHtml = marked.parse(content);
+        } else {
+          if (!asciidoctor) return;
+          // 解析 include 指令
+          let resolved = content;
+          const activePath = editorState.activeFilePath;
+          if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
+            try {
+              const { resolveIncludes } = await import('../services/export-service.js');
+              const dir = activePath.replace(/\/[^/]+$/, '');
+              resolved = await resolveIncludes(content, dir);
+            } catch (_) {}
+          }
+          const baseAttrs = {
+            showtitle: true,
+            toc: 'auto',
+            'source-highlighter': 'highlight.js',
+            sectanchors: '',
+            icons: 'font',
+          };
+          const attrs = buildAttributes(resolved, baseAttrs);
+          this.renderedHtml = asciidoctor.convert(resolved, {
+            safe: 'safe',
+            attributes: attrs,
+          });
         }
-        const baseAttrs = {
-          showtitle: true,
-          toc: 'auto',
-          'source-highlighter': 'highlight.js',
-          sectanchors: '',
-          icons: 'font',
-        };
-        const attrs = buildAttributes(resolved, baseAttrs);
-        this.renderedHtml = asciidoctor.convert(resolved, {
-          safe: 'safe',
-          attributes: attrs,
-        });
       } catch (e) {
-        console.error('AsciiDoc渲染错误:', e);
+        console.error('渲染错误:', e);
         this.renderedHtml = `<p style="color:red">${t('msg.renderError', { error: e.message })}</p>`;
       }
     }, 200);
@@ -221,11 +271,20 @@ class PreviewPane extends LitElement {
     this._ignoreScroll = false;
   }
 
+  _close() {
+    eventBus.emit('preview-close');
+  }
+
   render() {
-    if (!this.renderedHtml) {
-      return html`<div class="placeholder">${t('preview.placeholder')}</div>`;
-    }
-    return html`<div class="preview-content">${unsafeHTML(this.renderedHtml)}</div>`;
+    return html`
+      <div class="close-bar">
+        <button class="close-btn" @click=${this._close}>✕</button>
+      </div>
+      ${!this.renderedHtml
+        ? html`<div class="placeholder">${t('preview.placeholder')}</div>`
+        : html`<div class="preview-content">${unsafeHTML(this.renderedHtml)}</div>`
+      }
+    `;
   }
 }
 

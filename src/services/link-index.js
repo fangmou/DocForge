@@ -47,13 +47,12 @@ class LinkIndex {
     return invoke()('query_forward_links', { filePath });
   }
 
-  async getKeywords(filePath) {
-    // 标签已通过 query_all_tags 获取，此处为兼容保留
-    return new Set();
-  }
-
   async getAllTags() {
     return invoke()('query_all_tags');
+  }
+
+  async getTagsForFile(filePath) {
+    return invoke()('query_tags_for_file', { filePath });
   }
 
   async getFilesByTag(tag) {

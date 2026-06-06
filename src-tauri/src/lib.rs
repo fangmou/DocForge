@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 mod services;
+mod utils;
 
 use tauri::Manager;
 
@@ -31,6 +32,7 @@ pub fn run() {
             commands::file::pick_save_file,
             commands::file::get_file_mtime,
             commands::file::list_all_adoc_files,
+            commands::file::open_path,
             commands::file::reveal_in_shell,
             commands::link::build_link_index,
             commands::link::update_link_file,
@@ -39,6 +41,7 @@ pub fn run() {
             commands::link::query_forward_links,
             commands::link::query_title,
             commands::link::query_all_tags,
+            commands::link::query_tags_for_file,
             commands::link::query_files_by_tag,
             commands::link::query_all_files,
             commands::link::query_graph_data,
@@ -54,14 +57,30 @@ pub fn run() {
             commands::export::save_rendered_html,
             commands::export::pick_save_path,
             commands::export::pick_save_path_pdf,
+            commands::export::pick_save_path_docx,
             commands::export::check_asciidoctor_pdf,
+            commands::export::check_pandoc,
+            commands::export::detect_pandoc_command,
+            commands::export::detect_pdf_command,
+            commands::export::resolve_export_path,
             commands::export::export_to_pdf,
+            commands::export::export_to_docx,
             commands::export::open_in_browser,
+            commands::export::pick_docx_file,
+            commands::export::import_docx,
             commands::export::resolve_includes,
             commands::config::save_editor_config,
             commands::config::load_editor_config,
+            commands::config::save_export_config,
+            commands::config::load_export_config,
+            commands::config::save_pandoc_config,
+            commands::config::save_asciidoc_export_config,
+            commands::config::load_asciidoc_export_config,
             commands::config::save_pdf_config,
             commands::config::load_pdf_config,
+            commands::config::save_docx_config,
+            commands::config::load_docx_config,
+            commands::config::get_default_extra_args,
             commands::config::add_recent_file,
             commands::config::get_recent_files,
             commands::config::clear_recent_files,
@@ -69,8 +88,18 @@ pub fn run() {
             commands::config::get_current_workspace,
             commands::config::get_recent_workspaces,
             commands::config::clear_recent_workspaces,
+            commands::config::remove_recent_workspace,
             commands::config::save_shortcuts,
             commands::config::load_shortcuts,
+            commands::config::save_custom_snippets,
+            commands::config::load_custom_snippets,
+            commands::config::add_export_history,
+            commands::config::get_export_history,
+            commands::config::remove_export_history,
+            commands::config::clear_export_history,
+            commands::config::save_workspace_state,
+            commands::config::load_workspace_state,
+            commands::config::get_draft_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running docforge");

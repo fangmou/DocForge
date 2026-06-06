@@ -85,6 +85,16 @@ pub fn query_all_tags(
     Ok(db.get_all_tags())
 }
 
+/// 查询文件的所有标签
+#[tauri::command]
+pub fn query_tags_for_file(
+    file_path: String,
+    state: State<'_, std::sync::Mutex<LinkDb>>,
+) -> Result<Vec<String>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    Ok(db.get_tags_for_file(&file_path))
+}
+
 /// 按标签查文件
 #[tauri::command]
 pub fn query_files_by_tag(

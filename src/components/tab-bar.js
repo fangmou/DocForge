@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
-import { editorState } from '../services/editor-state.js';
+import { editorState, untitledName } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { t } from '../services/i18n.js';
+import { showSaveConfirm } from '../services/dialog.js';
 
 class TabBar extends LitElement {
   static properties = {
@@ -90,11 +91,17 @@ class TabBar extends LitElement {
       this.files = editorState.getOpenFiles();
       this.activePath = editorState.activeFilePath;
     });
+    this._closeActiveHandler = () => {
+      const active = editorState.activeFilePath;
+      if (active) this._closeTab(active, null);
+    };
+    eventBus.on('close-active-tab', this._closeActiveHandler);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsub?.();
+    if (this._closeActiveHandler) eventBus.off('close-active-tab', this._closeActiveHandler);
   }
 
   _selectTab(path) {
@@ -105,12 +112,31 @@ class TabBar extends LitElement {
     }
   }
 
-  _closeTab(path, e) {
-    e.stopPropagation();
+  async _closeTab(path, e) {
+    e?.stopPropagation?.();
+    // 检查是否有未保存修改
+    const file = editorState.getFile(path);
+    if (file?.isDirty) {
+      const displayName = path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop();
+      const result = await showSaveConfirm(t('dialog.unsavedChangesFile', { name: displayName }));
+      if (result === 'cancel') return;
+      if (result === 'save') {
+        // 先激活该 tab 再触发保存
+        editorState.setActiveFile(path);
+        eventBus.emit('file-opened', { path, content: file.content });
+        eventBus.emit('save-file');
+        // 等待保存完成（短暂延迟让 save-file 事件处理完毕）
+        await new Promise(r => setTimeout(r, 100));
+        // 如果保存被取消（如用户在另存为对话框取消），则放弃关闭
+        if (editorState.getFile(path)?.isDirty) return;
+      }
+    }
     editorState.closeFile(path);
     const active = editorState.getActiveFile();
     if (active) {
       eventBus.emit('file-opened', { path: active.path, content: active.content });
+    } else {
+      eventBus.emit('file-closed', path);
     }
   }
 
@@ -161,9 +187,11 @@ class TabBar extends LitElement {
     eventBus.emit('show-context-menu', { x: e.clientX, y: e.clientY, items });
   }
 
-  _closeOthers(keepPath) {
+  async _closeOthers(keepPath) {
     const others = this.files.filter(f => f.path !== keepPath).map(f => f.path);
-    for (const p of others) editorState.closeFile(p);
+    for (const p of others) {
+      await this._closeTab(p, null);
+    }
     const file = editorState.getFile(keepPath);
     if (file) {
       editorState.setActiveFile(keepPath);
@@ -171,9 +199,11 @@ class TabBar extends LitElement {
     }
   }
 
-  _closeAll() {
-    const paths = this.files.map(f => f.path);
-    for (const p of paths) editorState.closeFile(p);
+  async _closeAll() {
+    const paths = [...this.files.map(f => f.path)];
+    for (const p of paths) {
+      await this._closeTab(p, null);
+    }
   }
 
   render() {

@@ -50,24 +50,6 @@ pub struct AiConfig {
 
 *language 说明*: 控制界面语言和 Asciidoctor 渲染参数。中文时自动注入 `toc-title=目录`、`table-caption=表`、`figure-caption=图`、`example-caption=例`、`lang=zh_CN`。语言包文件位于 `src/i18n/{lang}.json`，新增语言只需添加 JSON 文件。
 
-=== save_editor_config
-
-*参数*: `config: EditorConfig`（使用 AppState）
-*返回*: `Result<(), String>`
-
-保存编辑器配置到内存 AppState。EditorConfig 结构：
-
-```
-{
-  font_size: u32,           // 编辑器字号 (px)，默认 14
-  tab_size: u32,            // Tab 宽度，默认 4
-  theme: String,            // 主题名称 "light" | "dark"
-  word_wrap: bool,          // 自动换行，默认 false
-  auto_save_interval: u32   // 自动保存间隔(ms)，默认 3000
-  language: String          // 界面语言 "zh" | "en"，默认 "zh"
-}
-```
-
 [[load-editor-config]]
 === load_editor_config
 
@@ -76,34 +58,144 @@ pub struct AiConfig {
 
 从内存加载当前编辑器配置。启动时由 editor-pane 调用以恢复用户偏好。
 
+== 导出配置树
+
+导出配置采用树状结构，支持多源格式（AsciiDoc、未来 Markdown）和多导出格式（HTML、PDF、Word）。
+
+[source,rust]
+----
+pub struct ExportConfig {
+    pub output_dir: String,          // 通用输出目录（HTML/PDF/Word 共用）
+    pub output_naming: String,       // 通用文件名规则 "stem" | "title"
+    pub pandoc: PandocConfig,        // 全局 pandoc 工具（asciidoc→docx 和 markdown→docx 共用）
+    pub asciidoc: AsciidocExportConfig, // AsciiDoc 专用配置
+}
+
+pub struct PandocConfig {
+    pub command_path: String,        // pandoc 命令路径，默认 "pandoc"
+    pub command_resolved: String,    // 缓存的解析路径（修改 command_path 时自动清空）
+}
+
+pub struct AsciidocExportConfig {
+    pub enable_diagram: bool,        // 启用 asciidoctor-diagram，默认 false
+    pub extra_args: String,          // 额外 CLI 参数（HTML 和 PDF 共用）
+    pub pdf: PdfConfig,              // PDF 独有配置
+    pub docx: DocxConfig,            // Word 独有配置
+}
+
+pub struct PdfConfig {
+    pub command_path: String,        // asciidoctor-pdf 命令路径
+    pub command_resolved: String,    // 缓存的解析路径
+    pub theme: String,               // PDF 主题文件
+    pub page_size: String,           // 页面大小，默认 "A4"
+    pub fonts_dir: String,           // 字体目录
+    pub footer_center: String,       // 页脚居中文本
+    pub cover_image: String,         // 封面图片
+    pub title_logo_image: String,    // 标题页 logo
+    pub page_foreground_image: String, // 水印图片
+}
+
+pub struct DocxConfig {
+    pub reference_doc: String,       // 参考 .docx 模板文件
+}
+----
+
+*关键设计*:
+- `pandoc` 位于 `ExportConfig` 顶层 — 因为 asciidoc→docx 和未来的 markdown→docx 共用
+- `asciidoc.pdf.command_path` 保留 — asciidoctor-pdf 是 asciidoc 专有工具
+- `asciidoc.docx` 不含 `command_path` — 用全局 `export.pandoc`
+- `output_dir`/`output_naming`/`enable_diagram`/`extra_args` 是所有格式共用的通用配置
+
+*设置 UI 导航*:
+
+```
+导出
+  ├─ 通用          ← output_dir, output_naming, pandoc 路径 + 检测
+  ├─ AsciiDoc · 引擎 ← enable_diagram, extra_args
+  ├─ AsciiDoc · PDF ← asciidoctor-pdf 路径 + PDF 独有字段
+  └─ AsciiDoc · Word ← reference_doc
+```
+
+[[save-export-config]]
+=== save_export_config
+
+*参数*: `output_dir: String, output_naming: String`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存导出通用配置（output_dir、output_naming）并持久化到磁盘。这两个字段为 HTML/PDF/Word 所有格式共用。
+
+[[load-export-config]]
+=== load_export_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<serde_json::Value, String>`
+
+加载导出通用配置 + pandoc 配置。返回 JSON 对象：
+
+```json
+{
+  "output_dir": "...",
+  "output_naming": "title",
+  "pandoc": { "command_path": "pandoc", "command_resolved": "" }
+}
+```
+
+[[save-pandoc-config]]
+=== save_pandoc_config
+
+*参数*: `config: PandocConfig`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存全局 pandoc 工具配置并持久化。修改 `command_path` 时自动清空 `command_resolved` 缓存。pandoc 被 asciidoc→docx 和未来的 markdown→docx 共用。
+
+[[save-asciidoc-export-config]]
+=== save_asciidoc_export_config
+
+*参数*: `enable_diagram: bool, extra_args: String`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存 AsciiDoc 导出引擎配置（enable_diagram、extra_args）并持久化。这两个参数影响 HTML 和 PDF 渲染。
+
+[[load-asciidoc-export-config]]
+=== load_asciidoc_export_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<serde_json::Value, String>`
+
+加载 AsciiDoc 引擎配置。返回 JSON 对象：
+
+```json
+{
+  "enable_diagram": false,
+  "extra_args": ""
+}
+```
+
 [[save-pdf-config]]
 === save_pdf_config
 
 *参数*: `config: PdfConfig`（使用 AppHandle + AppState）
 *返回*: `Result<(), String>`
 
-保存导出配置并持久化到磁盘（HTML/PDF 共用）。PdfConfig 结构：
+保存 PDF 独有配置（存储路径为 `export.asciidoc.pdf`）并持久化到磁盘。修改 `command_path` 时自动清空 `command_resolved` 缓存。
+
+PdfConfig 仅包含 PDF 独有字段：
 
 ```
 {
-  command_path: String,     // asciidoctor-pdf 命令路径，默认 "asciidoctor-pdf"
-  output_dir: String,       // 输出目录（HTML/PDF 共用），空则源文件同目录
-  output_naming: String,    // 输出文件名规则 "stem" | "title"，默认 "title"
-  enable_diagram: bool,     // 启用 asciidoctor-diagram（PlantUML/Mermaid 等），默认 false
-  extra_args: String,       // 用户自定义额外 CLI 参数（如 "-a toc"），默认空
-  theme: String,            // PDF 主题文件
-  page_size: String,        // 页面大小，默认 "A4"
-  fonts_dir: String,        // 字体目录
-  footer_center: String,    // 页脚居中文本
-  cover_image: String       // 封面图片路径
+  command_path: String,          // asciidoctor-pdf 命令路径
+  command_resolved: String,      // 缓存的解析路径
+  theme: String,                 // PDF 主题文件
+  page_size: String,             // 页面大小，默认 "A4"
+  fonts_dir: String,             // 字体目录
+  footer_center: String,         // 页脚居中文本
+  cover_image: String,           // 封面图片路径
+  title_logo_image: String,      // 标题页 logo 路径
+  page_foreground_image: String  // 水印图片路径
 }
 ```
 
-*output_naming 说明*:
-- `"stem"` — 使用源文件名（guide.adoc → guide.html/pdf）
-- `"title"` — 使用文档标题（`= 我的文档` → 我的文档.html/pdf），无标题回退到源文件名。标题中空格自动替换为下划线。
-
-NOTE: 这些是全局默认值。adoc 文件头属性（如 `:pdf-theme:`）优先级更高。
+NOTE: output_dir、output_naming、enable_diagram、extra_args 已移至通用配置和 AsciiDoc 引擎配置。
 
 [[load-pdf-config]]
 === load_pdf_config
@@ -111,23 +203,59 @@ NOTE: 这些是全局默认值。adoc 文件头属性（如 `:pdf-theme:`）优�
 *参数*: 无（使用 AppState）
 *返回*: `Result<PdfConfig, String>`
 
-加载当前 PDF 导出配置。
+加载当前 PDF 配置（从 `export.asciidoc.pdf`）。
+
+[[save-docx-config]]
+=== save_docx_config
+
+*参数*: `config: DocxConfig`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存 Word 配置（存储路径为 `export.asciidoc.docx`）并持久化到磁盘。DocxConfig 仅包含：
+
+```
+{
+  reference_doc: String  // 参考 .docx 模板文件
+}
+```
+
+NOTE: pandoc 命令路径已移至全局 `export.pandoc`，不再属于 DocxConfig。
+
+[[load-docx-config]]
+=== load_docx_config
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<DocxConfig, String>`
+
+加载当前 Word 配置（从 `export.asciidoc.docx`）。
+
+[[get-default-extra-args]]
+=== get_default_extra_args
+
+*参数*: `language: String`
+*返回*: `Result<String, String>`
+
+根据指定语言返回 PDF 导出的默认额外参数（唯一来源）。通用参数包括 `-a !chapter-signifier -a version-label=v -a compress -a sectnums -a sectnumlevels=5 -a pagenums -a title-separator=- -a icons=font -a reproducible -a source-highlighter=rouge`；中文（`"zh"`）时追加 `-a toc-title=目录 -a table-caption=表 -a figure-caption=图 -a example-caption=例 -a lang=zh_CN`。前端设置对话框打开时调用此命令获取默认值，用于填充额外参数字段和提供重置功能。
+
+*output_naming 说明*:
+- `"stem"` — 使用源文件名（guide.adoc → guide.html/pdf）
+- `"title"` — 使用文档标题（`= 我的文档` → 我的文档.html/pdf），无标题回退到源文件名。标题中的 `{attr}` 属性引用自动展开；` - `、` | `、` —— ` 等分隔符压缩为 `-`；其余空格替换为下划线；不安全字符（`/\:*?"<>|`）替换为下划线。
 
 [[add-recent-file]]
 === add_recent_file
 
-*参数*: `path: String`（使用 AppState）
+*参数*: `path: String, workspace_path: Option<String>`（使用 AppHandle + AppState）
 *返回*: `Result<(), String>`
 
-添加文件到最近文件列表。自动去重（已有则移到队首），最多保留 20 条。每次打开文件时 fire-and-forget 调用。
+添加文件到最近文件列表。提供 `workspace_path` 时写入对应工作区的独立状态文件；否则回退写入全局 `recent_files`（向后兼容）。自动去重（已有则移到队首），最多保留 20 条。每次打开文件时 fire-and-forget 调用。
 
 [[get-recent-files]]
 === get_recent_files
 
-*参数*: 无（使用 AppState）
+*参数*: `workspace_path: Option<String>`（使用 AppHandle + AppState）
 *返回*: `Result<Vec<RecentFile>, String>`
 
-获取最近文件列表。RecentFile 结构：`{ path: String, opened_at: u64 }`，`opened_at` 为 UNIX 时间戳（秒）。
+获取最近文件列表。提供 `workspace_path` 时从对应工作区状态文件读取；否则回退读取全局 `recent_files`。RecentFile 结构：`{ path: String, opened_at: u64 }`，`opened_at` 为 UNIX 时间戳（秒）。
 
 [[clear-recent-files]]
 === clear_recent_files
@@ -192,9 +320,44 @@ AppConfig 中新增字段：
 
 前端 `shortcut-registry.js` 维护一份默认快捷键表（如 `save → Ctrl+S`），`shortcuts` 字段仅存储用户自定义的覆盖项。前端启动时调用 `load_shortcuts` 合并覆盖，修改时调用 `save_shortcuts` 持久化。
 
+已注册的默认快捷键 ID 及默认绑定：
+
+| ID | 默认 | 说明 |
+|----|------|------|
+| `save` | `Ctrl+S` | 保存文件 |
+| `newFile` | `Ctrl+N` | 新建文件 |
+| `undo` | `Ctrl+Z` | 撤销 |
+| `redo` | `Ctrl+Shift+Z` | 重做 |
+| `closeTab` | `Ctrl+W` | 关闭标签页 |
+| `search` | `Ctrl+P` | 搜索文件 |
+| `findReplace` | `Ctrl+H` | 查找替换 |
+| `gotoLine` | `Ctrl+G` | 跳转行 |
+| `toggleWordWrap` | `Alt+Z` | 切换自动换行 |
+| `zoomIn` | `Ctrl+=` | 放大字号 |
+| `zoomOut` | `Ctrl+-` | 缩小字号 |
+| `zoomReset` | `Ctrl+0` | 重置字号 |
+| `toggleOutline` | `Alt+O` | 切换大纲 |
+| `toggleAI` | `Alt+A` | 切换 AI 助手 |
+| `toggleBacklinks` | `Alt+B` | 切换反向链接 |
+| `toggleGraph` | `Alt+G` | 切换知识图谱 |
+| `toggleTags` | `Alt+T` | 切换标签面板 |
+| `togglePreview` | `Alt+P` | 切换预览 |
+| `toggleSidebar` | `` Alt+` `` | 切换侧栏 |
+| `togglePlugin` | `Alt+L` | 切换插件管理器 |
+| `exportHtml` | `Ctrl+Shift+E` | 导出 HTML |
+| `exportPdf` | `Ctrl+Shift+P` | 导出 PDF |
+| `exportDocx` | `Ctrl+Shift+D` | 导出 Word |
+| `toggleLineComment` | `Ctrl+/` | 切换行注释 |
+| `toggleBlockComment` | `Ctrl+Shift+/` | 切换块注释 |
+| `markupBold` | `Ctrl+B` | 粗体标记 |
+| `markupItalic` | `Ctrl+I` | 斜体标记 |
+| `markupMono` | `` Ctrl+Shift+` `` | 等宽标记 |
+| `markupLink` | `Ctrl+K` | 插入链接 |
+| `alignTable` | `Alt+Shift+T` | 表格列对齐 |
+
 运行时快捷键分两个通道生效：
-- **编辑器内快捷键**（save/search/findReplace/gotoLine/zoomIn/zoomOut/zoomReset）：通过 `keymapCompartment` 注入 CodeMirror keymap，支持用户自定义后动态 reconfigure
-- **全局快捷键**（newFile/toggle*/exportHtml/exportPdf）：通过 `app-shell.js` 的 window keydown 监听，使用 `matchEvent()` 匹配注册中心中的绑定，通过 eventBus 分发动作
+- **编辑器内快捷键**（save/undo/redo/search/findReplace/gotoLine/zoom*/toggleLineComment/toggleBlockComment/markupBold/markupItalic/markupMono/markupLink/alignTable）：通过 `keymapCompartment` 注入 CodeMirror keymap，支持用户自定义后动态 reconfigure
+- **全局快捷键**（newFile/toggle*/exportHtml/exportPdf/exportDocx）：通过 `app-shell.js` 的 window keydown 监听，使用 `matchEvent()` 匹配注册中心中的绑定，通过 eventBus 分发动作
 
 [[save-shortcuts]]
 === save_shortcuts
@@ -211,3 +374,155 @@ AppConfig 中新增字段：
 *返回*: `Result<HashMap<String, String>, String>`
 
 加载用户自定义快捷键覆盖。启动时由前端 `shortcut-registry.init()` 调用。
+
+== 自定义标记片段
+
+AppConfig 中新增字段：
+
+```
+{
+  custom_snippets: Vec<CustomSnippet>  // 用户自定义标记片段列表
+}
+```
+
+CustomSnippet 结构：
+
+[source,rust]
+----
+pub struct CustomSnippet {
+    pub id: String,         // 唯一标识（UUID）
+    pub name: String,       // 显示名称
+    pub template: String,   // 片段模板，支持 {selected} 占位符
+    pub shortcut: String,   // 快捷键绑定（如 "Ctrl+Shift+M"），空则无快捷键
+    pub is_inline: bool,    // true=行内（包裹选中文本），false=块级（插入到光标处）
+    #[serde(default)]
+    pub format: String,     // 适用格式："adoc" | "md" | ""（空=所有格式通用）
+}
+----
+
+*模板说明*: `template` 中可使用 `{selected}` 占位符。有选区时替换为选中文本；无选区时光标定位到该位置。不包含 `{selected}` 则直接在光标处插入。
+
+*格式过滤*: 前端工具栏和编辑器根据当前文件格式过滤可用片段，仅显示匹配当前格式或格式为空的片段。
+
+[[save-custom-snippets]]
+=== save_custom_snippets
+
+*参数*: `snippets: Vec<CustomSnippet>`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+保存自定义标记片段列表并持久化到磁盘。前端设置对话框修改后调用。
+
+[[load-custom-snippets]]
+=== load_custom_snippets
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<Vec<CustomSnippet>, String>`
+
+加载自定义标记片段列表。启动时由前端加载，用于注册快捷键和填充工具栏菜单。
+
+== 导出历史管理
+
+导出历史按工作区隔离存储在 `{app_config_dir}/workspaces/{hash}.json` 独立文件中。未提供 `workspace_path` 时回退读写全局 `export_history`（向后兼容）。
+
+ExportRecord 结构：
+
+[source,rust]
+----
+pub struct ExportRecord {
+    pub path: String,       // 导出文件完整路径
+    pub format: String,     // "html" | "pdf" | "docx"
+    pub exported_at: u64,   // Unix 秒级时间戳
+}
+----
+
+[[add-export-history]]
+=== add_export_history
+
+*参数*: `path: String, format: String, workspace_path: Option<String>`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+添加导出历史记录。提供 `workspace_path` 时写入对应工作区状态文件；否则写入全局配置。自动去重（同路径移到队首）、清理物理文件已不存在的旧记录、截断保留 20 条。每次导出成功后 fire-and-forget 调用。
+
+[[get-export-history]]
+=== get_export_history
+
+*参数*: `workspace_path: Option<String>`（使用 AppHandle + AppState）
+*返回*: `Result<Vec<ExportRecordView>, String>`
+
+获取导出历史列表。提供 `workspace_path` 时从对应工作区状态文件读取；否则从全局配置读取。ExportRecordView 在 ExportRecord 基础上追加 `exists: bool` 字段（检查物理文件是否存在），供前端灰显已删除文件。
+
+[[remove-export-history]]
+=== remove_export_history
+
+*参数*: `path: String, workspace_path: Option<String>`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+删除指定路径的单条导出历史记录。提供 `workspace_path` 时操作对应工作区状态文件；否则操作全局配置。
+
+[[clear-export-history]]
+=== clear_export_history
+
+*参数*: `workspace_path: Option<String>`（使用 AppHandle + AppState）
+*返回*: `Result<(), String>`
+
+清空全部导出历史记录。提供 `workspace_path` 时清空对应工作区的导出历史；否则清空全局导出历史。
+
+== 工作区会话状态
+
+每个工作区的会话状态（打开的标签页、最近文件、导出历史）存储在独立文件中，切换工作区时自动保存和恢复。
+
+存储路径：`{app_config_dir}/workspaces/{hash}.json`，其中 `hash` 为工作区路径的 HashMap 默认哈希值（16 位十六进制）。
+
+Draft 文件目录：`{app_config_dir}/workspace-drafts/{hash}/`，用于存储未保存文件内容和新建未保存的临时文件。文件正式保存后自动清理对应 draft。
+
+WorkspaceState 结构：
+
+[source,rust]
+----
+pub struct WorkspaceState {
+    pub tabs: Vec<TabState>,
+    pub active_file_path: String,
+    pub recent_files: Vec<RecentFile>,
+    pub export_history: Vec<ExportRecord>,
+}
+
+pub struct TabState {
+    pub path: String,         // 文件路径或 __untitled_xxx
+    pub scroll_top: u32,      // 滚动位置
+    pub cursor_pos: u32,      // 光标位置
+    pub is_dirty: bool,       // 是否有未保存修改
+    pub draft_path: String,   // 未保存内容的 draft 文件路径，空串=无
+}
+----
+
+*设计要点*:
+- 已保存到磁盘的文件：TabState 只存路径和光标位置，内容从磁盘读取
+- `__untitled_*` 或 `is_dirty=true` 的标签页：前端将内容写入 draft 文件，TabState 中记录 `draft_path`
+- 切换工作区时：前端写 draft → Rust 保存状态文件 → 清空内存 → 加载新工作区 → 从磁盘/draft 恢复
+- 文件正式保存后：前端删除对应 draft 文件
+- 前端防抖自动保存（2 秒间隔），确保窗口意外关闭时数据不丢失
+- `load_workspace_state` 时自动过滤掉磁盘文件已删除的标签页
+
+[[save-workspace-state]]
+=== save_workspace_state
+
+*参数*: `workspace_path: String, state: WorkspaceState`（使用 AppHandle）
+*返回*: `Result<(), String>`
+
+保存工作区会话状态到独立 JSON 文件。同时清理该工作区 draft 目录中无用的 draft 文件（不在当前 tabs 的 draft_path 列表中的文件）。
+
+[[load-workspace-state]]
+=== load_workspace_state
+
+*参数*: `workspace_path: String`（使用 AppHandle）
+*返回*: `Result<Option<WorkspaceState>, String>`
+
+加载工作区会话状态。文件不存在时返回 `None`。自动过滤无效标签页：磁盘文件已删除的非 dirty 标签页被跳过；`__untitled_*` 文件需要 draft 存在才保留。
+
+[[get-draft-dir]]
+=== get_draft_dir
+
+*参数*: `workspace_path: String`（使用 AppHandle）
+*返回*: `Result<String, String>`
+
+返回指定工作区的 draft 目录路径（自动创建目录）。前端使用此路径直接读写 draft 文件（通过 `write_file`/`read_file` IPC 命令）。路径已标准化为 `/` 分隔符。

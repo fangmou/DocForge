@@ -12,10 +12,34 @@
 
 import { t } from './i18n.js';
 
+/**
+ * 从键盘事件中提取可匹配的键名。
+ * Windows WebView2 下 Ctrl+字母键时 e.key 可能返回控制字符（如 '\x05'），
+ * 需用 e.code（如 'KeyE'）做后备。
+ */
+export function keyFromEvent(e) {
+  let key = e.key;
+  if (key === ' ') return 'Space';
+  // 正常可打印字符直接用
+  if (key.length === 1 && key.charCodeAt(0) >= 32) return key.toUpperCase();
+  // e.key 是控制字符或非单字符（如 'Dead'、'Process'），回退到 e.code
+  const code = e.code || '';
+  if (code.startsWith('Key')) return code.slice(3);        // 'KeyE' → 'E'
+  if (code.startsWith('Digit')) return code.slice(5);      // 'Digit1' → '1'
+  if (code.startsWith('Numpad')) return code.slice(6);     // 'NumpadAdd' → 'Add'
+  // F1~F12 等直接用 code
+  if (code) return code;
+  // 最后兜底
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
 // 默认快捷键映射：id → { default: 'Ctrl+X', labelKey: 'i18n.key' }
 const DEFAULTS = {
   save:             { default: 'Ctrl+S',         labelKey: 'shortcuts.save' },
   newFile:          { default: 'Ctrl+N',         labelKey: 'shortcuts.newFile' },
+  undo:             { default: 'Ctrl+Z',         labelKey: 'shortcuts.undo' },
+  redo:             { default: 'Ctrl+Shift+Z',   labelKey: 'shortcuts.redo' },
+  closeTab:         { default: 'Ctrl+W',         labelKey: 'shortcuts.closeTab' },
   search:           { default: 'Ctrl+Shift+F',   labelKey: 'shortcuts.search' },
   findReplace:      { default: 'Ctrl+F',         labelKey: 'shortcuts.findReplace' },
   gotoLine:         { default: 'Ctrl+G',         labelKey: 'shortcuts.gotoLine' },
@@ -33,6 +57,15 @@ const DEFAULTS = {
   togglePlugin:     { default: 'Alt+L',          labelKey: 'shortcuts.togglePlugin' },
   exportHtml:       { default: 'Ctrl+Shift+E',   labelKey: 'shortcuts.exportHtml' },
   exportPdf:        { default: 'Ctrl+Shift+P',   labelKey: 'shortcuts.exportPdf' },
+  exportDocx:       { default: 'Ctrl+Shift+D',   labelKey: 'shortcuts.exportDocx' },
+  // 编辑/标记快捷键
+  toggleLineComment:  { default: 'Ctrl+/',         labelKey: 'shortcuts.toggleLineComment' },
+  toggleBlockComment: { default: 'Ctrl+Shift+/',   labelKey: 'shortcuts.toggleBlockComment' },
+  markupBold:         { default: 'Ctrl+B',         labelKey: 'shortcuts.markupBold' },
+  markupItalic:       { default: 'Ctrl+I',         labelKey: 'shortcuts.markupItalic' },
+  markupMono:         { default: 'Ctrl+Shift+`',   labelKey: 'shortcuts.markupMono' },
+  markupLink:         { default: 'Ctrl+K',         labelKey: 'shortcuts.markupLink' },
+  alignTable:         { default: 'Alt+Shift+T',    labelKey: 'shortcuts.alignTable' },
 };
 
 class ShortcutRegistry {
@@ -67,11 +100,15 @@ class ShortcutRegistry {
     return key ? t(key) : id;
   }
 
-  /** 获取 CodeMirror keymap 格式的绑定（Mod 代替 Ctrl，用于编辑器 keymap） */
+  /** 获取 CodeMirror keymap 格式的绑定（Mod 代替 Ctrl，`-` 分隔，末键小写） */
   getCmKey(id) {
     const raw = this.getShortcut(id);
     if (!raw) return '';
-    return raw.replace(/^Ctrl\b/, 'Mod').replace(/\+Ctrl\b/, '+Mod');
+    return raw.split('+').map((p, i, arr) => {
+      if (p === 'Ctrl') return 'Mod';
+      if (i === arr.length - 1 && p.length === 1) return p.toLowerCase();
+      return p;
+    }).join('-');
   }
 
   /** 将键盘事件转换为组合键字符串，与当前绑定匹配 */
@@ -80,9 +117,7 @@ class ShortcutRegistry {
     if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
     if (e.altKey) parts.push('Alt');
     if (e.shiftKey) parts.push('Shift');
-    let key = e.key;
-    if (key === ' ') key = 'Space';
-    if (key.length === 1) key = key.toUpperCase();
+    const key = keyFromEvent(e);
     parts.push(key);
     const combo = parts.join('+');
     for (const id of Object.keys(DEFAULTS)) {

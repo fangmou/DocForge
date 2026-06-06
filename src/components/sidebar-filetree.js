@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { listDirectory, listSubDirectory, readFile, deleteFile, renameFile, createFile, createDir } from '../services/file-service.js';
 import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
+import { showConfirm } from '../services/dialog.js';
 import { t } from '../services/i18n.js';
 
 class SidebarFiletree extends LitElement {
@@ -14,6 +15,7 @@ class SidebarFiletree extends LitElement {
     showWsMenu: { state: true },
     _treeCollapsed: { state: true },
     _recentCollapsed: { state: true },
+    _inputDialog: { state: true },
   };
 
   static styles = css`
@@ -43,7 +45,6 @@ class SidebarFiletree extends LitElement {
       background: var(--bg-3);
     }
     .ws-header .arrow {
-      margin-left: auto;
       font-size: 10px;
       opacity: 0.5;
     }
@@ -72,7 +73,7 @@ class SidebarFiletree extends LitElement {
       border-radius: 6px;
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
       z-index: 50;
-      max-height: 200px;
+      max-height: 50vh;
       overflow-y: auto;
       padding: 4px 0;
     }
@@ -98,7 +99,6 @@ class SidebarFiletree extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      flex: 1;
     }
     .ws-menu .ws-item .ws-path {
       font-size: 10px;
@@ -106,6 +106,27 @@ class SidebarFiletree extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .ws-menu .ws-item .ws-remove {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      font-size: 11px;
+      color: var(--text-3);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .ws-menu .ws-item:hover .ws-remove {
+      opacity: 0.6;
+      color: inherit;
+    }
+    .ws-menu .ws-item .ws-remove:hover {
+      opacity: 1;
+      background: rgba(255,255,255,0.2);
     }
     .empty {
       padding: 20px;
@@ -191,6 +212,69 @@ class SidebarFiletree extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .input-dialog-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 600;
+    }
+    .input-dialog {
+      background: var(--bg-3);
+      border: 1px solid var(--border-medium);
+      border-radius: 8px;
+      padding: 16px 20px;
+      min-width: 320px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
+    }
+    .input-dialog-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-1);
+      margin-bottom: 10px;
+    }
+    .input-dialog-field {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      font-size: 13px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      outline: none;
+      box-sizing: border-box;
+    }
+    .input-dialog-field:focus {
+      border-color: var(--accent);
+    }
+    .input-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .input-dialog-btn {
+      padding: 5px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-2);
+      color: var(--text-2);
+    }
+    .input-dialog-btn:hover {
+      background: var(--bg-3);
+    }
+    .input-dialog-btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .input-dialog-btn.primary:hover {
+      opacity: 0.9;
+    }
   `;
 
   constructor() {
@@ -203,6 +287,8 @@ class SidebarFiletree extends LitElement {
     this.showWsMenu = false;
     this._treeCollapsed = false;
     this._recentCollapsed = false;
+    this._inputDialog = null;
+    this._inputResolve = null;
   }
 
   connectedCallback() {
@@ -236,7 +322,7 @@ class SidebarFiletree extends LitElement {
   async _loadRecentFiles() {
     try {
       const { getRecentFiles } = await import('../services/config-service.js');
-      this.recentFiles = await getRecentFiles();
+      this.recentFiles = await getRecentFiles(this.rootPath || undefined);
     } catch (e) { this.recentFiles = []; }
   }
 
@@ -257,6 +343,7 @@ class SidebarFiletree extends LitElement {
         setCurrentWorkspace(path).catch(() => {});
         this._loadRecentWorkspaces();
       });
+      this._loadRecentFiles();
     } catch (e) {
       console.error('加载目录失败:', e);
     }
@@ -265,6 +352,30 @@ class SidebarFiletree extends LitElement {
   _switchWorkspace(path) {
     this.showWsMenu = false;
     eventBus.emit('workspace-opened', path);
+  }
+
+  /** 智能截断路径：缩写前缀/…/父目录（不重复文件夹名，ws-name 已显示） */
+  _shortenPath(path) {
+    const segs = path.split('/').filter(Boolean);
+    if (segs.length <= 3) return path;
+    // 缩写 wsl.localhost → wsl
+    const abbr = segs.map(s => s === 'wsl.localhost' ? 'wsl' : s);
+    const isUnc = path.startsWith('//');
+    const isUnix = !isUnc && path.startsWith('/');
+    const headCount = (isUnc || isUnix) ? 2 : 1;
+    const prefix = isUnix ? '/' : isUnc ? '//' : '';
+    const head = prefix + abbr.slice(0, headCount).join('/');
+    const parent = segs[segs.length - 2]; // 父目录
+    return `${head}/…/${parent}`;
+  }
+
+  async _removeWorkspace(path) {
+    try {
+      const { removeRecentWorkspace } = await import('../services/config-service.js');
+      await removeRecentWorkspace(path);
+      await this._loadRecentWorkspaces();
+      this.requestUpdate();
+    } catch (_) {}
   }
 
   _toggleWsMenu(e) {
@@ -279,7 +390,7 @@ class SidebarFiletree extends LitElement {
       eventBus.emit('file-opened', { path, content });
       // 记录最近文件
       import('../services/config-service.js').then(({ addRecentFile }) => {
-        addRecentFile(path).catch(() => {});
+        addRecentFile(path, this.rootPath || undefined).catch(() => {});
         this._loadRecentFiles();
       });
     } catch (e) {
@@ -318,6 +429,78 @@ class SidebarFiletree extends LitElement {
     return null;
   }
 
+  _showInputDialog(type, defaultValue = '') {
+    return new Promise((resolve) => {
+      this._inputResolve = resolve;
+      this._inputDialog = { type, value: defaultValue };
+      this.updateComplete.then(() => {
+        const input = this.shadowRoot.querySelector('.input-dialog-field');
+        if (input) {
+          input.focus();
+          if (type === 'rename') {
+            const dotIdx = defaultValue.lastIndexOf('.');
+            input.setSelectionRange(0, dotIdx > 0 ? dotIdx : defaultValue.length);
+          } else {
+            input.select();
+          }
+        }
+      });
+    });
+  }
+
+  _resolveInput(value) {
+    if (!this._inputDialog) return;
+    const resolve = this._inputResolve;
+    this._inputDialog = null;
+    this._inputResolve = null;
+    resolve?.(value);
+  }
+
+  async _suggestNewFileName(parentPath) {
+    const entry = this._findEntry(this.entries, parentPath);
+    if (!entry) return 'untitled.adoc';
+    if (!entry.children) {
+      try { entry.children = await listSubDirectory(parentPath); }
+      catch (_) { return 'untitled.adoc'; }
+    }
+    const existing = new Set(entry.children.map(e => e.name.toLowerCase()));
+    if (!existing.has('untitled.adoc')) return 'untitled.adoc';
+    let i = 1;
+    while (existing.has(`untitled${i}.adoc`)) i++;
+    return `untitled${i}.adoc`;
+  }
+
+  _renderInputDialog() {
+    if (!this._inputDialog) return '';
+    const { type, value } = this._inputDialog;
+    const titles = {
+      'new-file': t('file.menu.newFile'),
+      'new-dir': t('file.menu.newDir'),
+      'rename': t('file.menu.rename'),
+    };
+    return html`
+      <div class="input-dialog-overlay" @click=${() => this._resolveInput(null)}>
+        <div class="input-dialog" @click=${(e) => e.stopPropagation()}>
+          <div class="input-dialog-title">${titles[type]}</div>
+          <input class="input-dialog-field"
+                 type="text"
+                 .value=${value}
+                 @keydown=${(e) => {
+                   if (e.key === 'Enter') this._resolveInput(e.target.value.trim());
+                   else if (e.key === 'Escape') this._resolveInput(null);
+                 }} />
+          <div class="input-dialog-actions">
+            <button class="input-dialog-btn" @click=${() => this._resolveInput(null)}>${t('settings.cancel')}</button>
+            <button class="input-dialog-btn primary" @click=${() => {
+              const input = this.shadowRoot.querySelector('.input-dialog-field');
+              this._resolveInput(input?.value.trim());
+            }}>${t('dialog.ok')}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   _onContextMenu(e, entry) {
     e.preventDefault();
     e.stopPropagation();
@@ -327,9 +510,15 @@ class SidebarFiletree extends LitElement {
       { separator: true },
       { label: t('file.menu.rename'), action: { type: 'rename', path: entry.path, name: entry.name }, icon: '✏' },
       { label: t('file.menu.delete'), action: { type: 'delete', path: entry.path }, icon: '🗑' },
+      { separator: true },
+      { label: t('file.menu.copyPath'), action: () => navigator.clipboard.writeText(entry.path), icon: '⎘' },
+      { label: t('file.menu.revealInShell'), action: () => eventBus.emit('reveal-in-shell', entry.path), icon: '📂' },
     ] : [
       { label: t('file.menu.rename'), action: { type: 'rename', path: entry.path, name: entry.name }, icon: '✏' },
       { label: t('file.menu.delete'), action: { type: 'delete', path: entry.path }, icon: '🗑' },
+      { separator: true },
+      { label: t('file.menu.copyPath'), action: () => navigator.clipboard.writeText(entry.path), icon: '⎘' },
+      { label: t('file.menu.revealInShell'), action: () => eventBus.emit('reveal-in-shell', entry.path), icon: '📂' },
     ];
     eventBus.emit('show-context-menu', { x: e.clientX, y: e.clientY, items });
   }
@@ -338,7 +527,7 @@ class SidebarFiletree extends LitElement {
     if (!action) return;
     const { type, path, name } = action;
     if (type === 'delete') {
-      if (!confirm(t('file.confirmDelete', { name: name || path }))) return;
+      if (!(await showConfirm(t('file.confirmDelete', { name: name || path })))) return;
       try {
         await deleteFile(path);
         if (editorState.files.has(path)) {
@@ -348,7 +537,7 @@ class SidebarFiletree extends LitElement {
         await this._refresh();
       } catch (e) { console.error('删除失败:', e); }
     } else if (type === 'rename') {
-      const newName = prompt(t('file.newName'), name);
+      const newName = await this._showInputDialog('rename', name);
       if (!newName || newName === name) return;
       const parent = path.substring(0, path.lastIndexOf('/'));
       const newPath = `${parent}/${newName}`;
@@ -366,14 +555,15 @@ class SidebarFiletree extends LitElement {
         await this._refresh();
       } catch (e) { console.error('重命名失败:', e); }
     } else if (type === 'new-file') {
-      const fileName = prompt(t('file.newFileName'), 'untitled.adoc');
+      const defaultName = await this._suggestNewFileName(path);
+      const fileName = await this._showInputDialog('new-file', defaultName);
       if (!fileName) return;
       try {
         await createFile(`${path}/${fileName}`);
         await this._refresh();
       } catch (e) { console.error('创建文件失败:', e); }
     } else if (type === 'new-dir') {
-      const dirName = prompt(t('file.newDirName'));
+      const dirName = await this._showInputDialog('new-dir', '');
       if (!dirName) return;
       try {
         await createDir(`${path}/${dirName}`);
@@ -422,7 +612,7 @@ class SidebarFiletree extends LitElement {
     const wsName = this.rootPath ? this.rootPath.split('/').pop() : '';
 
     if (!hasEntries && !hasRecent) {
-      return html`<div class="empty">${t('sidebar.empty')}</div>`;
+      return html`<div class="empty">${t('sidebar.empty')}</div>${this._renderInputDialog()}`;
     }
 
     return html`
@@ -437,10 +627,14 @@ class SidebarFiletree extends LitElement {
                 <div class="ws-item ${ws.path === this.rootPath ? 'active' : ''}"
                      @click=${(e) => { e.stopPropagation(); this._switchWorkspace(ws.path); }}>
                   <span>📁</span>
-                  <div>
+                  <div style="flex:1;min-width:0">
                     <div class="ws-name">${ws.path.split('/').pop()}</div>
-                    <div class="ws-path">${ws.path}</div>
+                    <div class="ws-path" title="${ws.path}">${this._shortenPath(ws.path)}</div>
                   </div>
+                  ${ws.path !== this.rootPath ? html`
+                    <span class="ws-remove" title="${t('sidebar.removeWorkspace')}"
+                          @click=${(e) => { e.stopPropagation(); this._removeWorkspace(ws.path); }}>×</span>
+                  ` : ''}
                 </div>
               `)}
             </div>
@@ -471,6 +665,7 @@ class SidebarFiletree extends LitElement {
           </div>
         </div>
       ` : ''}
+      ${this._renderInputDialog()}
     `;
   }
 }

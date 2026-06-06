@@ -91,7 +91,7 @@ pub struct FileEntry {
 *参数*: `file_name: String`（使用 Tauri AppHandle）
 *返回*: `Result<Option<String>, String>`
 
-弹出系统保存文件对话框，预填文件名，限制为 `.adoc`/`.asciidoc`/`.txt` 格式。用于新建文件保存（"另存为"）。在独立线程中执行。
+弹出系统保存文件对话框，预填文件名，提供 `.adoc`/`.asciidoc`/`.txt` 和 `.md`/`.markdown` 两种格式过滤器。用于新建文件保存（"另存为"）。在独立线程中执行。
 
 [[get-file-mtime]]
 === get_file_mtime
@@ -107,7 +107,7 @@ pub struct FileEntry {
 *参数*: `path: String`
 *返回*: `Result<Vec<String>, String>`
 
-递归列出指定目录下所有 `.adoc`/`.asciidoc`/`.txt` 文件的完整路径。跳过 `.` 开头的隐藏目录和文件。用于 `include::` 指令的文件路径补全——前端缓存文件列表，输入 `include::` 时展示工作区内可选文档。
+递归列出指定目录下所有 `.adoc`/`.asciidoc`/`.txt`/`.md`/`.markdown` 文件的完整路径。跳过 `.` 开头的隐藏目录和文件。用于 `include::` 指令和链接的文件路径补全——前端缓存文件列表，输入 `include::` 或 `xref:` 时展示工作区内可选文档。
 
 [[reveal-in-shell]]
 === reveal_in_shell
@@ -119,3 +119,14 @@ pub struct FileEntry {
 - Linux: `xdg-open <dir>`
 - macOS: `open -R <path>`
 - Windows: `explorer /select,<path>`
+
+[[open-path]]
+=== open_path
+
+*参数*: `path: String`
+*返回*: `Result<(), String>`
+
+用系统默认程序打开指定文件。导出历史面板中"打开"按钮使用。平台特定实现：
+- Linux: `xdg-open <path>`
+- macOS: `open <path>`
+- Windows: `cmd /c start "" <path>`

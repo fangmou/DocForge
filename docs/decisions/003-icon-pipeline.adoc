@@ -1,0 +1,71 @@
+# 003 — 应用图标生成流程
+
+## 源文件
+
+- SVG 源：`src/assets/logo.svg`（透明背景，512×512 viewBox）
+- 替换时直接覆盖此文件
+
+## 依赖
+
+```
+pip install cairosvg Pillow
+apt install icoutils   # 提供 icotool
+```
+
+## 一键生成
+
+```bash
+python3 << 'EOF'
+import cairosvg, subprocess, os, io
+from PIL import Image
+
+SVG = 'src/assets/logo.svg'
+OUT = 'src-tauri/icons'
+TMP = '/tmp/ico_build'
+os.makedirs(TMP, exist_ok=True)
+
+def render(size):
+    s = size * 4  # 4x 超采样
+    data = cairosvg.svg2png(url=SVG, output_width=s, output_height=s)
+    img = Image.open(io.BytesIO(data)).convert('RGBA')
+    return img.resize((size, size), Image.LANCZOS)
+
+# PNG 各尺寸（Tauri bundle 引用）
+for t in [32, 128, 256]:
+    render(t).save(f'{OUT}/{t}x{t}.png')
+render(256).save(f'{OUT}/128x128@2x.png')  # Retina = 256
+
+# ICO (Windows) — 必须用 icotool，Pillow 生成的会被 windres 编译损坏
+ICO_SIZES = [16, 24, 32, 48, 256]
+for s in ICO_SIZES:
+    render(s).save(f'{TMP}/{s}.png')
+subprocess.run(['icotool', '-c', '-o', f'{OUT}/icon.ico',
+    *[f'{TMP}/{s}.png' for s in ICO_SIZES]], check=True)
+
+# ICNS (macOS) — 暂用 256 PNG 占位，正式打包时需 apple iconutil 转换
+render(256).save(f'{OUT}/icon.icns')
+
+print('Done')
+EOF
+```
+
+## 编译注意事项
+
+更换图标后必须触发 cargo 重新编译资源：
+
+```bash
+touch src-tauri/tauri.conf.json
+rm -f src-tauri/target/x86_64-pc-windows-gnu/release/build/docforge-*/out/resource.lib
+make windows
+```
+
+原因：`tauri-build` 的 `cargo:rerun-if-changed` 不监听 `icon.ico`，cargo 会使用旧缓存。
+
+## 踩坑记录
+
+1. **Pillow 生成的 ICO 不可用**：Pillow 输出的 ICO entry 头部数据损坏（声称单张 7MB+），
+   `windres` 编译后 exe 内图标组完全乱序，Windows 显示默认蓝框。必须用 `icotool` 构建。
+2. **PNG 压缩 ICO 不可用**：`windres`（MinGW cross-compile）不支持 PNG 压缩的 ICO entry，
+   编译后图标组数据同样损坏。`icotool` 默认输出 BMP DIB 格式，兼容性最好。
+3. **标题栏模糊**：Windows 125%/150% 缩放需要 20/24px 图标。若只有 16 和 32，
+   系统会拉伸导致模糊。ICO 中已包含 24×24 尺寸。

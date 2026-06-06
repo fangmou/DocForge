@@ -6,9 +6,9 @@
 *参数*: `html_content: String, dest_path: String`
 *返回*: `Result<String, String>`
 
-将前端 asciidoctor 渲染后的 HTML 内容包装到带样式的完整 HTML 模板中并保存到指定路径。自动创建不存在的父目录。返回实际保存路径。
+将前端 asciidoctor 或 marked 渲染后的 HTML 内容包装到带样式的完整 HTML 模板中并保存到指定路径。自动创建不存在的父目录。返回实际保存路径。
 
-前端根据 `output_dir` 和 `output_naming` 配置自动生成 `dest_path`：有 `output_dir` 则输出到配置目录，否则输出到源文件同目录。仅无源文件时才弹出保存对话框。
+前端根据 `export.output_dir` 和 `export.output_naming` 配置自动生成 `dest_path`：有 `output_dir` 则输出到配置目录，否则输出到源文件同目录。仅无源文件时才弹出保存对话框。
 
 *HTML 模板包含*:
 - 响应式布局（max-width 800px 居中）
@@ -32,13 +32,71 @@
 
 弹出系统保存文件对话框，预填文件名，限制为 `.pdf` 格式。在独立线程中执行。
 
+[[pick-save-path-docx]]
+=== pick_save_path_docx
+
+*参数*: `file_name: String`（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统保存文件对话框，预填文件名，限制为 `.docx` 格式。在独立线程中执行。
+
 [[check-asciidoctor-pdf]]
 === check_asciidoctor_pdf
 
-*参数*: 无
+*参数*: 无（使用 AppState）
 *返回*: `Result<bool, String>`
 
-检测系统是否安装了 `asciidoctor-pdf` 命令行工具。使用 `which` crate 在 PATH 中查找。返回 `true` 表示可用。
+检测系统是否安装了 `asciidoctor-pdf` 命令行工具。优先使用缓存的 `command_resolved` 字段（非空即表示可用），无缓存时自动检测并缓存结果。读取路径为 `export.asciidoc.pdf.command_resolved`。
+
+*检测逻辑*: 使用 `which` crate 在 PATH 中查找原生安装 → Windows 上额外检查 WSL 子系统。
+
+[[detect-pdf-command]]
+=== detect_pdf_command
+
+*参数*: 无（使用 Tauri AppHandle + AppState）
+*返回*: `Result<CommandDetectInfo, String>`
+
+显式检测 `asciidoctor-pdf` 命令的可用性和位置，返回结构化结果，同时更新缓存（`export.asciidoc.pdf.command_resolved`）并持久化到配置文件。
+
+*返回结构* `CommandDetectInfo`:
+- `available: bool` — 是否找到
+- `resolved: String` — 完整解析后的命令（如 `/usr/bin/asciidoctor-pdf` 或 `wsl asciidoctor-pdf`）
+- `display: String` — 友好显示文本（如 `✓ /usr/bin/asciidoctor-pdf`）
+
+*检测逻辑*（`detect_command_inner` 共用）:
+1. `which::which` 查找原生安装 → 返回完整路径
+2. Windows 上额外通过 `wsl which` 查找 WSL 中的安装 → 返回 `wsl {command}`
+
+*缓存机制*: 检测结果写入对应 `command_resolved` 并持久化。修改 `command_path` 时自动清空缓存。
+
+[[check-pandoc]]
+=== check_pandoc
+
+*参数*: 无（使用 AppState）
+*返回*: `Result<bool, String>`
+
+检测系统是否安装了 `pandoc` 命令行工具。优先使用缓存的 `command_resolved` 字段（读取路径为 `export.pandoc.command_resolved`），无缓存时自动检测并缓存结果。
+
+[[detect-pandoc-command]]
+=== detect_pandoc_command
+
+*参数*: 无（使用 Tauri AppHandle + AppState）
+*返回*: `Result<CommandDetectInfo, String>`
+
+显式检测 `pandoc` 命令的可用性和位置，返回结构化结果，同时更新缓存（`export.pandoc.command_resolved`）并持久化。内部复用 `detect_command_inner` 与 `detect_pdf_command` 共享检测逻辑。
+
+[[resolve-export-path]]
+=== resolve_export_path
+
+*参数*: `path: String`
+*返回*: `Result<String, String>`
+
+将配置中的路径解析为当前平台可用的格式。用于前端设置面板的路径提示。
+
+*解析规则*:
+- Linux/WSL 环境：Windows 盘符路径（如 `C:/Users/...`）自动转为 `/mnt/c/Users/...`
+- Windows 原生环境：仅做分隔符标准化
+- 非 Windows 盘符路径：仅做 `\` → `/` 标准化
 
 [[export-to-pdf]]
 === export_to_pdf
@@ -46,7 +104,13 @@
 *参数*: `source_path: String`（使用 AppState）
 *返回*: `Result<String, String>`
 
-使用 `asciidoctor-pdf` CLI 将 AsciiDoc 源文件导出为 PDF。
+使用 `asciidoctor-pdf` CLI 将 AsciiDoc 源文件导出为 PDF。Markdown (`.md`/`.markdown`) 文件自动切换为 `pandoc -f markdown -t pdf --pdf-engine=xelatex` 直出，跳过 asciidoctor 中间步骤。
+
+*配置来源*（树状配置路径）:
+- `export.output_dir` / `export.output_naming` — 通用输出配置
+- `export.asciidoc.enable_diagram` — 是否启用 diagram 扩展
+- `export.asciidoc.extra_args` — 额外 CLI 参数
+- `export.asciidoc.pdf.*` — PDF 独有字段（command_path, theme, page_size 等）
 
 *配置优先级*: adoc 文件头属性（如 `:pdf-theme:`, `:pdf-page-size:`）> 全局导出配置（设置对话框）。
 
@@ -55,18 +119,54 @@
 *输出路径*:
 - 若配置了 `output_dir`，输出到 `{output_dir}/{name}.pdf`
 - 否则输出到源文件同目录 `{name}.pdf`
+- 路径型配置（`output_dir`、`fonts_dir`、`cover_image`、`title_logo_image`、`page_foreground_image`）在 Linux/WSL 环境下自动将 Windows 盘符路径转为 `/mnt/...` 格式
+- 自动创建输出目录
+
+*WSL 支持*:
+- Windows 上编辑 WSL 文件时，自动通过 `wsl [-d distro]` 调用 WSL 中的 `asciidoctor-pdf`
+- 所有路径参数自动转换：WSL UNC 路径 → Linux 路径，Windows 本地路径 → `/mnt/...`
+- Windows 上弹出控制台窗口已被抑制（`CREATE_NO_WINDOW` 标志）
 
 *构建的命令行参数*:
 - `-o {output_path}` — 输出路径
 - `-r asciidoctor-diagram` — 若 `enable_diagram` 为 true
 - `-a pdf-theme={theme}` — 主题（可选）
 - `-a pdf-page-size={size}` — 页面大小（可选）
-- `-a pdf-fontsdir={dir}` — 字体目录（可选）
+- `-a pdf-fontsdir={dir}` — 字体目录（可选，自动解析 Windows 路径）
 - `-a pdf-footer-center={text}` — 页脚居中文本（可选）
-- `-a pdf-cover-image={path}` — 封面图片（可选）
+- `-a pdf-cover-image=image:{path}[]` — 封面图片（可选，自动解析 Windows 路径）
+- `-a title-logo-image=image:{path}[top=2in,align=center,pdfwidth=4in]` — 标题页 logo（可选，自动解析 Windows 路径）
+- `-a page-foreground-image=image:{path}[]` — 水印图片（可选，自动解析 Windows 路径）
 - 用户 `extra_args` — 自定义额外参数，支持引号内的空格
 
 未安装 `asciidoctor-pdf` 时前端应使用 `open_in_browser` 后备方案。
+
+[[export-to-docx]]
+=== export_to_docx
+
+*参数*: `source_path: String`（使用 AppState）
+*返回*: `Result<String, String>`
+
+将 AsciiDoc 源文件导出为 Word (.docx)。Markdown (`.md`/`.markdown`) 文件自动切换为 `pandoc -f markdown -t docx` 直出，跳过 asciidoctor → DocBook 中间步骤。AsciiDoc 文件的转换链为 `asciidoctor → DocBook XML → pandoc → docx`。
+
+*配置来源*（树状配置路径）:
+- `export.output_dir` / `export.output_naming` — 通用输出配置
+- `export.pandoc.command_path` — 全局 pandoc 命令路径
+- `export.asciidoc.enable_diagram` — 是否启用 diagram 扩展（影响 asciidoctor → DocBook 步骤）
+- `export.asciidoc.docx.reference_doc` — Word 参考模板
+
+*转换步骤*:
+1. `asciidoctor -b docbook` 将 .adoc 转为 DocBook XML（临时文件）
+2. `pandoc -f docbook -t docx` 将 DocBook XML 转为 .docx
+3. 清理临时文件（无论成功或失败）
+
+*输出文件名*: 与 PDF 相同，由 `output_naming` 配置决定。
+
+*临时文件*: 使用 `{temp_dir}/docforge_{pid}_{timestamp}.xml` 格式，避免并发冲突。
+
+*WSL 支持*: 与 PDF 导出相同，自动检测并使用 WSL 中的工具链。
+
+*前置条件*: 需同时安装 `asciidoctor`（或 `asciidoctor-pdf`）和 `pandoc`。
 
 [[open-in-browser]]
 === open_in_browser
@@ -93,3 +193,30 @@
 *参数说明*:
 - `content` — 主文档内容
 - `base_dir` — 主文档所在目录，用于解析相对路径
+
+[[pick-docx-file]]
+=== pick_docx_file
+
+*参数*: 无（使用 Tauri AppHandle）
+*返回*: `Result<Option<String>, String>`
+
+弹出系统打开文件对话框，限制为 `.docx` 格式。在独立线程中执行避免阻塞异步运行时。返回选中的文件路径（已标准化为 `/` 分隔符），用户取消返回 `null`。
+
+[[import-docx]]
+=== import_docx
+
+*参数*: `docx_path: String, dest_dir: String`（使用 AppState）
+*返回*: `Result<String, String>`
+
+将 Word (.docx) 文件通过 pandoc 转换为 AsciiDoc (.adoc) 文件，保存到指定目录。
+
+*转换命令*: `pandoc {docx_path} -f docx -t asciidoc -o {dest_dir}/{stem}.adoc`
+
+*行为*:
+- 从 `docx_path` 提取文件名 stem 作为输出文件名（如 `report.docx` → `report.adoc`）
+- 自动创建目标目录
+- 返回生成的 .adoc 文件路径
+
+*WSL 支持*: 与导出 DOCX 相同，自动检测并使用 WSL 中的 pandoc。
+
+*前置条件*: 需安装 `pandoc`（通过 `check_pandoc` 检测）。

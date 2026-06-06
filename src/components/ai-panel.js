@@ -178,6 +178,8 @@ class AiPanel extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._toggleHandler = () => {
+      const willOpen = !this.classList.contains('visible');
+      if (willOpen) eventBus.emit('force-close-all-panels');
       this.classList.toggle('visible');
       const isVisible = this.classList.contains('visible');
       eventBus.emit('ai-panel-toggled', isVisible);

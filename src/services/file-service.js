@@ -36,8 +36,8 @@ export async function createDir(path) {
   return invoke()('create_dir', { path });
 }
 
-export async function pickSaveFile(fileName) {
-  return invoke()('pick_save_file', { fileName });
+export async function pickSaveFile(dir, fileName) {
+  return invoke()('pick_save_file', { dir, fileName });
 }
 
 export async function getFileMtime(path) {

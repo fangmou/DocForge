@@ -1,9 +1,16 @@
 import { LitElement, html, css } from 'lit';
 import { loadAiConfig, saveAiConfig, testAiConnection } from '../services/ai-service.js';
-import { saveEditorConfig, loadEditorConfig, savePdfConfig, loadPdfConfig } from '../services/config-service.js';
+import {
+  saveEditorConfig, loadEditorConfig,
+  loadExportConfig, saveExportConfig, savePandocConfig,
+  loadAsciidocExportConfig, saveAsciidocExportConfig,
+  savePdfConfig, loadPdfConfig,
+  saveDocxConfig, loadDocxConfig,
+  getDefaultExtraArgs, loadCustomSnippets, saveCustomSnippets,
+} from '../services/config-service.js';
 import { eventBus } from '../services/event-bus.js';
 import { t, setLanguage, getLanguage } from '../services/i18n.js';
-import { shortcutRegistry } from '../services/shortcut-registry.js';
+import { shortcutRegistry, keyFromEvent } from '../services/shortcut-registry.js';
 
 class SettingsDialog extends LitElement {
   static properties = {
@@ -25,17 +32,40 @@ class SettingsDialog extends LitElement {
     tabSize: { type: Number },
     wordWrap: { type: Boolean },
     autoSaveInterval: { type: Number },
-    // PDF
-    commandPath: { type: String },
+    // 导出通用
     outputDir: { type: String },
     outputNaming: { type: String },
+    outputDirResolved: { type: String },
+    // 全局 pandoc
+    pandocCommandPath: { type: String },
+    pandocStatus: { type: String },
+    pandocStatusType: { type: String },
+    // AsciiDoc 引擎
     enableDiagram: { type: Boolean },
     extraArgs: { type: String },
+    // PDF（仅 PDF 独有字段）
+    commandPath: { type: String },
     pdfTheme: { type: String },
     pageSize: { type: String },
     fontsDir: { type: String },
     footerCenter: { type: String },
     coverImage: { type: String },
+    titleLogoImage: { type: String },
+    pageForegroundImage: { type: String },
+    pdfStatus: { type: String },
+    pdfStatusType: { type: String },
+    // 路径解析提示
+    fontsDirResolved: { type: String },
+    coverImageResolved: { type: String },
+    titleLogoImageResolved: { type: String },
+    pageForegroundImageResolved: { type: String },
+    // Word (docx)
+    docxReferenceDoc: { type: String },
+    docxReferenceDocResolved: { type: String },
+    // 自定义标记
+    customSnippets: { type: Array },
+    // 树状导航展开状态
+    _exportExpanded: { state: true },
   };
 
   static styles = css`
@@ -56,8 +86,8 @@ class SettingsDialog extends LitElement {
       background: var(--bg-3);
       border-radius: 12px;
       border: 1px solid var(--border-medium);
-      width: 540px;
-      max-height: 80vh;
+      width: 720px;
+      max-height: 85vh;
       display: flex;
       flex-direction: column;
       box-shadow: 0 8px 32px rgba(0,0,0,0.24);
@@ -95,7 +125,7 @@ class SettingsDialog extends LitElement {
       overflow: hidden;
     }
     .nav {
-      width: 140px;
+      width: 170px;
       background: var(--bg-2);
       border-right: 1px solid var(--border-subtle);
       padding: 8px;
@@ -103,6 +133,7 @@ class SettingsDialog extends LitElement {
       flex-direction: column;
       gap: 2px;
       flex-shrink: 0;
+      overflow-y: auto;
     }
     .nav-item {
       display: flex;
@@ -131,6 +162,38 @@ class SettingsDialog extends LitElement {
     .nav-item .nav-icon {
       font-size: 14px;
       opacity: 0.8;
+    }
+    /* 树状导航 section header */
+    .nav-section {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-1);
+      cursor: pointer;
+      font-size: 12px;
+      text-align: left;
+      width: 100%;
+      font-weight: 600;
+    }
+    .nav-section:hover {
+      background: var(--border-subtle);
+    }
+    .nav-section .toggle-icon {
+      font-size: 10px;
+      transition: transform 0.15s;
+    }
+    .nav-section .toggle-icon.collapsed {
+      transform: rotate(-90deg);
+    }
+    .nav-child {
+      padding-left: 12px;
+    }
+    .nav-children.collapsed {
+      display: none;
     }
     .content {
       flex: 1;
@@ -184,6 +247,9 @@ class SettingsDialog extends LitElement {
       font-size: 13px;
       color: var(--text-1);
       cursor: pointer;
+    }
+    .aligned-label {
+      margin-top: 20px;
     }
     .footer {
       display: flex;
@@ -326,12 +392,109 @@ class SettingsDialog extends LitElement {
       cursor: pointer;
     }
     button.reset-all-btn:hover { background: var(--bg-3); color: var(--text-1); }
+    .field-reset-btn {
+      padding: 3px 8px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--accent);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .field-reset-btn:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    /* 自定义标记片段 */
+    .snippet-card {
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0;
+      margin-bottom: 6px;
+      overflow: hidden;
+    }
+    .snippet-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: var(--bg-3);
+    }
+    .snippet-top input.sn-name {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 8px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-size: 12px;
+    }
+    .snippet-top input.sn-name:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .snippet-top select {
+      padding: 3px 4px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .snippet-top select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .snippet-top input.sc-input {
+      width: 90px;
+      flex-shrink: 0;
+    }
+    .snippet-top button.sn-delete {
+      padding: 2px 6px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-3);
+      font-size: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .snippet-top button.sn-delete:hover {
+      color: var(--color-error);
+      background: var(--bg-2);
+    }
+    .snippet-bottom textarea {
+      width: 100%;
+      padding: 6px 8px;
+      border: none;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      resize: vertical;
+      min-height: 36px;
+      box-sizing: border-box;
+      display: block;
+    }
+    .snippet-bottom textarea:focus {
+      outline: none;
+    }
+    .snippet-bottom textarea::placeholder {
+      color: var(--text-3);
+    }
   `;
 
   constructor() {
     super();
     this.visible = false;
     this.activeTab = 'editor';
+    this._exportExpanded = true;
     // AI 默认值
     this.endpoint = 'https://api.openai.com';
     this.apiKey = '';
@@ -348,17 +511,41 @@ class SettingsDialog extends LitElement {
     this.tabSize = 4;
     this.wordWrap = false;
     this.autoSaveInterval = 3;
-    // PDF 默认值
-    this.commandPath = 'asciidoctor-pdf';
+    // 导出通用
     this.outputDir = '';
     this.outputNaming = 'title';
+    this.outputDirResolved = '';
+    // 全局 pandoc
+    this.pandocCommandPath = 'pandoc';
+    this.pandocStatus = '';
+    this.pandocStatusType = '';
+    // AsciiDoc 引擎
     this.enableDiagram = false;
     this.extraArgs = '';
+    this._defaultExtraArgs = '';
+    // PDF（仅独有字段）
+    this.commandPath = 'asciidoctor-pdf';
     this.pdfTheme = '';
     this.pageSize = '';
     this.fontsDir = '';
     this.footerCenter = '';
     this.coverImage = '';
+    this.titleLogoImage = '';
+    this.pageForegroundImage = '';
+    this.pdfStatus = '';
+    this.pdfStatusType = '';
+    // 路径解析提示
+    this.fontsDirResolved = '';
+    this.coverImageResolved = '';
+    this.titleLogoImageResolved = '';
+    this.pageForegroundImageResolved = '';
+    // Word (docx)
+    this.docxReferenceDoc = '';
+    this.docxReferenceDocResolved = '';
+    this._resolveTimers = {};
+    this._pandocResolved = '';
+    this._pdfResolved = '';
+    this.customSnippets = [];
   }
 
   connectedCallback() {
@@ -380,38 +567,100 @@ class SettingsDialog extends LitElement {
   }
 
   async _loadAll() {
-    try {
-      const ai = await loadAiConfig();
+    const [aiRes, edRes, exportRes, asciidocRes, pdfRes, snippetsRes, docxRes] = await Promise.allSettled([
+      loadAiConfig(),
+      loadEditorConfig(),
+      loadExportConfig(),
+      loadAsciidocExportConfig(),
+      loadPdfConfig(),
+      loadCustomSnippets(),
+      loadDocxConfig(),
+    ]);
+
+    if (aiRes.status === 'fulfilled') {
+      const ai = aiRes.value;
       this.endpoint = ai.endpoint;
       this.apiKey = ai.api_key;
       this.model = ai.model;
       this.maxTokens = ai.max_tokens;
       this.temperature = ai.temperature;
-    } catch (_) {}
+    }
 
-    try {
-      const ed = await loadEditorConfig();
+    if (edRes.status === 'fulfilled') {
+      const ed = edRes.value;
       this.fontSize = ed.font_size || 14;
       this.tabSize = ed.tab_size || 4;
       this.theme = ed.theme || 'light';
       this.wordWrap = ed.word_wrap || false;
-      this.autoSaveInterval = ed.auto_save_interval || 3;
+      this.autoSaveInterval = ed.auto_save_interval ?? 3;
       this.language = ed.language || 'zh';
-    } catch (_) {}
+    }
 
-    try {
-      const pdf = await loadPdfConfig();
+    // 导出通用配置 + pandoc
+    if (exportRes.status === 'fulfilled') {
+      const ec = exportRes.value;
+      this.outputDir = ec.output_dir || '';
+      this.outputNaming = ec.output_naming || 'title';
+      this.pandocCommandPath = (ec.pandoc && ec.pandoc.command_path) || 'pandoc';
+      const pandocResolved = (ec.pandoc && ec.pandoc.command_resolved) || '';
+      this._pandocResolved = pandocResolved;
+      if (pandocResolved) {
+        this.pandocStatus = pandocResolved.startsWith('wsl ')
+          ? '✓ WSL ' + pandocResolved.substring(4)
+          : '✓ ' + pandocResolved;
+        this.pandocStatusType = 'ok';
+      } else {
+        this._detectPandocCommand();
+      }
+    }
+
+    // AsciiDoc 引擎配置
+    if (asciidocRes.status === 'fulfilled') {
+      const ae = asciidocRes.value;
+      this.enableDiagram = ae.enable_diagram || false;
+      this.extraArgs = ae.extra_args || '';
+    }
+
+    // PDF 配置
+    if (pdfRes.status === 'fulfilled') {
+      const pdf = pdfRes.value;
       this.commandPath = pdf.command_path || 'asciidoctor-pdf';
-      this.outputDir = pdf.output_dir || '';
-      this.outputNaming = pdf.output_naming || 'title';
-      this.enableDiagram = pdf.enable_diagram || false;
-      this.extraArgs = pdf.extra_args || '';
       this.pdfTheme = pdf.theme || '';
       this.pageSize = pdf.page_size || '';
       this.fontsDir = pdf.fonts_dir || '';
       this.footerCenter = pdf.footer_center || '';
       this.coverImage = pdf.cover_image || '';
+      this.titleLogoImage = pdf.title_logo_image || '';
+      this.pageForegroundImage = pdf.page_foreground_image || '';
+      // 恢复已缓存的检测状态
+      const resolved = pdf.command_resolved || '';
+      this._pdfResolved = resolved;
+      if (resolved) {
+        this.pdfStatus = resolved.startsWith('wsl ')
+          ? '✓ WSL ' + resolved.substring(4)
+          : '✓ ' + resolved;
+        this.pdfStatusType = 'ok';
+      } else {
+        this._detectPdfCommand();
+      }
+    }
+
+    if (snippetsRes.status === 'fulfilled') {
+      this.customSnippets = snippetsRes.value || [];
+    }
+
+    if (docxRes.status === 'fulfilled') {
+      this.docxReferenceDoc = docxRes.value.reference_doc || '';
+    }
+
+    // 获取默认参数（独立于任何配置加载结果）
+    try {
+      this._defaultExtraArgs = await getDefaultExtraArgs(this.language);
+      if (!this.extraArgs) this.extraArgs = this._defaultExtraArgs;
     } catch (_) {}
+
+    // 预解析路径（基于所有已加载的配置值）
+    this._preResolvePaths();
   }
 
   _hide() {
@@ -443,10 +692,8 @@ class SettingsDialog extends LitElement {
         auto_save_interval: this.autoSaveInterval,
         language: this.language,
       });
-      // 立即应用编辑器配置
       eventBus.emit('font-size-set', this.fontSize);
       eventBus.emit('set-word-wrap', this.wordWrap);
-      // 应用语言
       if (this.language !== getLanguage()) {
         await setLanguage(this.language);
         eventBus.emit('language-changed', this.language);
@@ -455,22 +702,61 @@ class SettingsDialog extends LitElement {
       console.error('保存编辑器配置失败:', e);
     }
 
-    // 保存 PDF 配置
+    // 保存导出通用配置
+    try {
+      await saveExportConfig(this.outputDir, this.outputNaming);
+    } catch (e) {
+      console.error('保存导出配置失败:', e);
+    }
+
+    // 保存 pandoc 配置
+    try {
+      await savePandocConfig({
+        command_path: this.pandocCommandPath,
+        command_resolved: this._pandocResolved || '',
+      });
+    } catch (e) {
+      console.error('保存 pandoc 配置失败:', e);
+    }
+
+    // 保存 AsciiDoc 引擎配置
+    try {
+      await saveAsciidocExportConfig(this.enableDiagram, this.extraArgs);
+    } catch (e) {
+      console.error('保存 AsciiDoc 引擎配置失败:', e);
+    }
+
+    // 保存 PDF 配置（仅独有字段）
     try {
       await savePdfConfig({
         command_path: this.commandPath,
-        output_dir: this.outputDir,
-        output_naming: this.outputNaming,
-        enable_diagram: this.enableDiagram,
-        extra_args: this.extraArgs,
+        command_resolved: this._pdfResolved || '',
         theme: this.pdfTheme,
         page_size: this.pageSize,
         fonts_dir: this.fontsDir,
         footer_center: this.footerCenter,
         cover_image: this.coverImage,
+        title_logo_image: this.titleLogoImage,
+        page_foreground_image: this.pageForegroundImage,
       });
     } catch (e) {
       console.error('保存PDF配置失败:', e);
+    }
+
+    // 保存 Word 配置（仅 reference_doc）
+    try {
+      await saveDocxConfig({
+        reference_doc: this.docxReferenceDoc,
+      });
+    } catch (e) {
+      console.error('保存Word配置失败:', e);
+    }
+
+    // 保存自定义标记片段
+    try {
+      await saveCustomSnippets(this.customSnippets);
+    } catch (e) {
+      console.error('保存自定义标记失败:', e);
     }
 
     this._hide();
@@ -491,20 +777,123 @@ class SettingsDialog extends LitElement {
     this.requestUpdate();
   }
 
+  async _detectPdfCommand() {
+    this.pdfStatus = '...';
+    this.pdfStatusType = '';
+    this.requestUpdate();
+    try {
+      const { detectPdfCommand } = await import('../services/export-service.js');
+      const info = await detectPdfCommand();
+      if (info.available) {
+        this.pdfStatus = info.display;
+        this.pdfStatusType = 'ok';
+      } else {
+        this.pdfStatus = info.display;
+        this.pdfStatusType = 'fail';
+      }
+    } catch (e) {
+      this.pdfStatus = `${t('settings.export.commandNotFound', { cmd: this.commandPath })}: ${e}`;
+      this.pdfStatusType = 'fail';
+    }
+    this.requestUpdate();
+  }
+
+  async _detectPandocCommand() {
+    this.pandocStatus = '...';
+    this.pandocStatusType = '';
+    this.requestUpdate();
+    try {
+      const { detectPandocCommand } = await import('../services/export-service.js');
+      const info = await detectPandocCommand();
+      if (info.available) {
+        this.pandocStatus = info.display;
+        this.pandocStatusType = 'ok';
+      } else {
+        this.pandocStatus = info.display;
+        this.pandocStatusType = 'fail';
+      }
+    } catch (e) {
+      this.pandocStatus = `${t('settings.export.commandNotFound', { cmd: this.pandocCommandPath })}: ${e}`;
+      this.pandocStatusType = 'fail';
+    }
+    this.requestUpdate();
+  }
+
+  /** 路径输入变化时，异步解析并显示转换后的实际路径 */
+  async _onPathInput(field, value) {
+    this[field] = value;
+    const resolvedField = field + 'Resolved';
+    this[resolvedField] = '';
+    if (this._resolveTimers[field]) clearTimeout(this._resolveTimers[field]);
+    if (!value) {
+      this.requestUpdate();
+      return;
+    }
+    this._resolveTimers[field] = setTimeout(async () => {
+      try {
+        const { resolveExportPath } = await import('../services/export-service.js');
+        const resolved = await resolveExportPath(value);
+        if (resolved !== value.replace(/\\/g, '/')) {
+          this[resolvedField] = resolved;
+        } else {
+          this[resolvedField] = '';
+        }
+      } catch (_) {
+        this[resolvedField] = '';
+      }
+      this.requestUpdate();
+    }, 300);
+    this.requestUpdate();
+  }
+
+  /** 加载配置后，并行预解析已有路径 */
+  async _preResolvePaths() {
+    const fields = ['outputDir', 'fontsDir', 'coverImage', 'titleLogoImage', 'pageForegroundImage', 'docxReferenceDoc'].filter(f => this[f]);
+    if (!fields.length) return;
+    const { resolveExportPath } = await import('../services/export-service.js');
+    await Promise.allSettled(fields.map(async (field) => {
+      const value = this[field];
+      const resolved = await resolveExportPath(value);
+      if (resolved !== value.replace(/\\/g, '/')) {
+        this[field + 'Resolved'] = resolved;
+      }
+    }));
+    this.requestUpdate();
+  }
+
   _changeTheme(e) {
     this.theme = e.target.value;
     eventBus.emit('theme-changed', this.theme);
   }
 
-  _changeLanguage(e) {
+  async _changeLanguage(e) {
+    const oldDefault = this._defaultExtraArgs;
     this.language = e.target.value;
+    try { this._defaultExtraArgs = await getDefaultExtraArgs(this.language); } catch (_) {}
+    if (this.extraArgs === oldDefault) {
+      this.extraArgs = this._defaultExtraArgs;
+    }
   }
 
   _switchTab(tab) {
     this.activeTab = tab;
+    if (['exportCommon', 'asciidocEngine', 'asciidocPdf', 'asciidocDocx'].includes(tab)) {
+      this._exportExpanded = true;
+    }
+  }
+
+  _toggleExportSection() {
+    this._exportExpanded = !this._exportExpanded;
+  }
+
+  _resetExtraArgs() {
+    this.extraArgs = this._defaultExtraArgs || '';
   }
 
   render() {
+    const exportChildren = ['exportCommon', 'asciidocEngine', 'asciidocPdf', 'asciidocDocx'];
+    const isExportChild = exportChildren.includes(this.activeTab);
+
     return html`
       <div class="dialog">
         <div class="header">
@@ -517,25 +906,45 @@ class SettingsDialog extends LitElement {
             <button class="nav-item ${this.activeTab === 'editor' ? 'active' : ''}" @click=${() => this._switchTab('editor')}>
               <span class="nav-icon">📝</span> ${t('settings.tab.editor')}
             </button>
-            <button class="nav-item ${this.activeTab === 'appearance' ? 'active' : ''}" @click=${() => this._switchTab('appearance')}>
-              <span class="nav-icon">🎨</span> ${t('settings.tab.appearance')}
-            </button>
             <button class="nav-item ${this.activeTab === 'ai' ? 'active' : ''}" @click=${() => this._switchTab('ai')}>
               <span class="nav-icon">🤖</span> ${t('settings.tab.ai')}
             </button>
-            <button class="nav-item ${this.activeTab === 'pdf' ? 'active' : ''}" @click=${() => this._switchTab('pdf')}>
-              <span class="nav-icon">📄</span> ${t('settings.tab.export')}
+            <button class="nav-section" @click=${this._toggleExportSection}>
+              <span class="toggle-icon ${this._exportExpanded ? '' : 'collapsed'}">▼</span>
+              <span class="nav-icon">📦</span> ${t('settings.tab.export')}
             </button>
+            <div class="nav-children ${this._exportExpanded ? '' : 'collapsed'}">
+              <div class="nav-child">
+                <button class="nav-item ${this.activeTab === 'exportCommon' ? 'active' : ''}" @click=${() => this._switchTab('exportCommon')}>
+                  ${t('settings.tab.exportCommon')}
+                </button>
+                <button class="nav-item ${this.activeTab === 'asciidocEngine' ? 'active' : ''}" @click=${() => this._switchTab('asciidocEngine')}>
+                  ${t('settings.tab.asciidocEngine')}
+                </button>
+                <button class="nav-item ${this.activeTab === 'asciidocPdf' ? 'active' : ''}" @click=${() => this._switchTab('asciidocPdf')}>
+                  ${t('settings.tab.asciidocPdf')}
+                </button>
+                <button class="nav-item ${this.activeTab === 'asciidocDocx' ? 'active' : ''}" @click=${() => this._switchTab('asciidocDocx')}>
+                  ${t('settings.tab.asciidocDocx')}
+                </button>
+              </div>
+            </div>
             <button class="nav-item ${this.activeTab === 'shortcuts' ? 'active' : ''}" @click=${() => this._switchTab('shortcuts')}>
               <span class="nav-icon">⌨</span> ${t('settings.tab.shortcuts')}
+            </button>
+            <button class="nav-item ${this.activeTab === 'markup' ? 'active' : ''}" @click=${() => this._switchTab('markup')}>
+              <span class="nav-icon">✥</span> ${t('settings.tab.markup')}
             </button>
           </div>
           <div class="content">
             ${this.activeTab === 'editor' ? this._renderEditorTab() : ''}
-            ${this.activeTab === 'appearance' ? this._renderAppearanceTab() : ''}
             ${this.activeTab === 'ai' ? this._renderAiTab() : ''}
-            ${this.activeTab === 'pdf' ? this._renderPdfTab() : ''}
+            ${this.activeTab === 'exportCommon' ? this._renderExportCommonTab() : ''}
+            ${this.activeTab === 'asciidocEngine' ? this._renderAsciidocEngineTab() : ''}
+            ${this.activeTab === 'asciidocPdf' ? this._renderPdfTab() : ''}
+            ${this.activeTab === 'asciidocDocx' ? this._renderDocxTab() : ''}
             ${this.activeTab === 'shortcuts' ? this._renderShortcutsTab() : ''}
+            ${this.activeTab === 'markup' ? this._renderMarkupTab() : ''}
           </div>
         </div>
         <div class="footer">
@@ -580,6 +989,22 @@ class SettingsDialog extends LitElement {
     return html`
       <div class="field-row">
         <div class="field">
+          <label>${t('settings.appearance.theme')}</label>
+          <select .value=${this.theme} @change=${this._changeTheme}>
+            <option value="light">${t('settings.appearance.themeLight')}</option>
+            <option value="dark">${t('settings.appearance.themeDark')}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>${t('settings.language')}</label>
+          <select .value=${this.language} @change=${this._changeLanguage}>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
           <label>${t('settings.editor.fontSize')}</label>
           <input type="number" min="10" max="32" .value=${this.fontSize} @input=${(e) => this.fontSize = parseInt(e.target.value)} />
         </div>
@@ -601,35 +1026,13 @@ class SettingsDialog extends LitElement {
     `;
   }
 
-  _renderAppearanceTab() {
+  /** 导出 · 通用 */
+  _renderExportCommonTab() {
     return html`
-      <div class="field">
-        <label>${t('settings.appearance.theme')}</label>
-        <select .value=${this.theme} @change=${this._changeTheme}>
-          <option value="light">${t('settings.appearance.themeLight')}</option>
-          <option value="dark">${t('settings.appearance.themeDark')}</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>${t('settings.language')}</label>
-        <select .value=${this.language} @change=${this._changeLanguage}>
-          <option value="zh">中文</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-    `;
-  }
-
-  _renderPdfTab() {
-    return html`
-      <div class="field">
-        <label>${t('settings.export.commandPath')}</label>
-        <input type="text" .value=${this.commandPath} @input=${(e) => this.commandPath = e.target.value} />
-        <div class="hint">${t('settings.export.commandPathHint')}</div>
-      </div>
       <div class="field">
         <label>${t('settings.export.outputDir')}</label>
-        <input type="text" .value=${this.outputDir} @input=${(e) => this.outputDir = e.target.value} placeholder="/path/to/output" />
+        <input type="text" .value=${this.outputDir} @input=${(e) => this._onPathInput('outputDir', e.target.value)} placeholder="/path/to/output" />
+        ${this.outputDirResolved ? html`<div class="test-status ok">→ ${this.outputDirResolved}</div>` : ''}
       </div>
       <div class="field">
         <label>${t('settings.export.outputNaming')}</label>
@@ -640,7 +1043,22 @@ class SettingsDialog extends LitElement {
         <div class="hint">${t('settings.export.outputNamingHint')}</div>
       </div>
       <div class="field">
-        <label class="checkbox-label">
+        <label>${t('settings.exportDocx.commandPath')}</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" .value=${this.pandocCommandPath} @input=${(e) => { this.pandocCommandPath = e.target.value; this.pandocStatus = ''; this.pandocStatusType = ''; this._pandocResolved = ''; }} style="flex:1" />
+          <button class="test-btn" @click=${this._detectPandocCommand}>${t('settings.export.detectCommand')}</button>
+        </div>
+        <div class="hint">${t('settings.exportDocx.commandPathHint')}</div>
+        ${this.pandocStatus ? html`<div class="test-status ${this.pandocStatusType}">${this.pandocStatus}</div>` : ''}
+      </div>
+    `;
+  }
+
+  /** AsciiDoc · 引擎 */
+  _renderAsciidocEngineTab() {
+    return html`
+      <div class="field">
+        <label class="checkbox-label aligned-label">
           <input type="checkbox" .checked=${this.enableDiagram} @change=${(e) => this.enableDiagram = e.target.checked} />
           ${t('settings.export.enableDiagram')}
         </label>
@@ -648,8 +1066,28 @@ class SettingsDialog extends LitElement {
       </div>
       <div class="field">
         <label>${t('settings.export.extraArgs')}</label>
-        <input type="text" .value=${this.extraArgs} @input=${(e) => this.extraArgs = e.target.value} placeholder="-a toc -a source-highlighter=rouge" />
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" .value=${this.extraArgs} @input=${(e) => this.extraArgs = e.target.value} style="flex:1" />
+          ${this.extraArgs !== this._defaultExtraArgs ? html`
+            <button class="field-reset-btn" @click=${this._resetExtraArgs}>${t('settings.shortcuts.reset')}</button>
+          ` : ''}
+        </div>
         <div class="hint">${t('settings.export.extraArgsHint')}</div>
+      </div>
+    `;
+  }
+
+  /** AsciiDoc · PDF */
+  _renderPdfTab() {
+    return html`
+      <div class="field">
+        <label>${t('settings.export.commandPath')}</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" .value=${this.commandPath} @input=${(e) => { this.commandPath = e.target.value; this.pdfStatus = ''; this.pdfStatusType = ''; this._pdfResolved = ''; }} style="flex:1" />
+          <button class="test-btn" @click=${this._detectPdfCommand}>${t('settings.export.detectCommand')}</button>
+        </div>
+        <div class="hint">${t('settings.export.commandPathHint')}</div>
+        ${this.pdfStatus ? html`<div class="test-status ${this.pdfStatusType}">${this.pdfStatus}</div>` : ''}
       </div>
       <div class="field-row">
         <div class="field">
@@ -663,19 +1101,42 @@ class SettingsDialog extends LitElement {
       </div>
       <div class="field">
         <label>${t('settings.export.fontsDir')}</label>
-        <input type="text" .value=${this.fontsDir} @input=${(e) => this.fontsDir = e.target.value} placeholder="/path/to/fonts" />
+        <input type="text" .value=${this.fontsDir} @input=${(e) => this._onPathInput('fontsDir', e.target.value)} placeholder="/path/to/fonts" />
+        ${this.fontsDirResolved ? html`<div class="test-status ok">→ ${this.fontsDirResolved}</div>` : ''}
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label>${t('settings.export.footerCenter')}</label>
-          <input type="text" .value=${this.footerCenter} @input=${(e) => this.footerCenter = e.target.value} />
-        </div>
-        <div class="field">
-          <label>${t('settings.export.coverImage')}</label>
-          <input type="text" .value=${this.coverImage} @input=${(e) => this.coverImage = e.target.value} />
-        </div>
+      <div class="field">
+        <label>${t('settings.export.footerCenter')}</label>
+        <input type="text" .value=${this.footerCenter} @input=${(e) => this.footerCenter = e.target.value} />
+      </div>
+      <div class="field">
+        <label>${t('settings.export.coverImage')}</label>
+        <input type="text" .value=${this.coverImage} @input=${(e) => this._onPathInput('coverImage', e.target.value)} />
+        ${this.coverImageResolved ? html`<div class="test-status ok">→ ${this.coverImageResolved}</div>` : ''}
+      </div>
+      <div class="field">
+        <label>${t('settings.export.titleLogoImage')}</label>
+        <input type="text" .value=${this.titleLogoImage} @input=${(e) => this._onPathInput('titleLogoImage', e.target.value)} placeholder="images/logo.png" />
+        ${this.titleLogoImageResolved ? html`<div class="test-status ok">→ ${this.titleLogoImageResolved}</div>` : ''}
+      </div>
+      <div class="field">
+        <label>${t('settings.export.pageForegroundImage')}</label>
+        <input type="text" .value=${this.pageForegroundImage} @input=${(e) => this._onPathInput('pageForegroundImage', e.target.value)} placeholder="images/watermark.svg" />
+        ${this.pageForegroundImageResolved ? html`<div class="test-status ok">→ ${this.pageForegroundImageResolved}</div>` : ''}
       </div>
       <div class="hint" style="margin-top:8px;">${t('settings.export.adocPriorityHint')}</div>
+    `;
+  }
+
+  /** AsciiDoc · Word */
+  _renderDocxTab() {
+    return html`
+      <div class="field">
+        <label>${t('settings.exportDocx.referenceDoc')}</label>
+        <input type="text" .value=${this.docxReferenceDoc} @input=${(e) => this._onPathInput('docxReferenceDoc', e.target.value)} placeholder="template.docx" />
+        ${this.docxReferenceDocResolved ? html`<div class="test-status ok">→ ${this.docxReferenceDocResolved}</div>` : ''}
+        <div class="hint">${t('settings.exportDocx.referenceDocHint')}</div>
+      </div>
+      <div class="hint" style="margin-top:8px;">${t('settings.exportDocx.pipelineHint')}</div>
     `;
   }
 
@@ -720,7 +1181,6 @@ class SettingsDialog extends LitElement {
     input.classList.remove('recording');
     const id = input.dataset.scId;
     if (!input.value.trim()) {
-      // 恢复当前值
       input.value = shortcutRegistry.getShortcut(id);
     }
   }
@@ -731,14 +1191,12 @@ class SettingsDialog extends LitElement {
     const input = e.target;
     const id = input.dataset.scId;
 
-    // Escape 取消录制
     if (e.key === 'Escape') {
       input.value = shortcutRegistry.getShortcut(id);
       input.blur();
       return;
     }
 
-    // Backspace/Delete 清除快捷键
     if (e.key === 'Backspace' || e.key === 'Delete') {
       shortcutRegistry.setShortcut(id, '').catch(() => {});
       input.value = '';
@@ -746,7 +1204,6 @@ class SettingsDialog extends LitElement {
       return;
     }
 
-    // 忽略单独修饰键
     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
 
     const parts = [];
@@ -754,10 +1211,7 @@ class SettingsDialog extends LitElement {
     if (e.altKey) parts.push('Alt');
     if (e.shiftKey) parts.push('Shift');
 
-    let key = e.key;
-    if (key === ' ') key = 'Space';
-    if (key.length === 1) key = key.toUpperCase();
-    parts.push(key);
+    parts.push(keyFromEvent(e));
 
     const combo = parts.join('+');
     shortcutRegistry.setShortcut(id, combo).catch(() => {});
@@ -777,6 +1231,109 @@ class SettingsDialog extends LitElement {
 
   _resetAllShortcuts() {
     shortcutRegistry.resetAll().then(() => this.requestUpdate());
+  }
+
+  // ─── 自定义标记标签页 ───
+
+  _renderMarkupTab() {
+    return html`
+      <div class="shortcut-header">
+        <span class="hint">${t('settings.markup.hint')}</span>
+        <button class="reset-all-btn" @click=${this._addSnippet}>+ ${t('settings.markup.addSnippet')}</button>
+      </div>
+      ${this.customSnippets.length === 0 ? html`
+        <div style="text-align:center;color:var(--text-3);padding:24px;font-size:12px;">
+          ${t('settings.markup.empty')}
+        </div>
+      ` : ''}
+      ${this.customSnippets.map((s, i) => html`
+        <div class="snippet-card">
+          <div class="snippet-top">
+            <input class="sn-name"
+                   .value=${s.name} placeholder="${t('settings.markup.name')}"
+                   @input=${(e) => this._updateSnippet(i, { ...s, name: e.target.value })} />
+            <select .value=${s.is_inline ? 'inline' : 'block'}
+                    @change=${(e) => this._updateSnippet(i, { ...s, is_inline: e.target.value === 'inline' })}>
+              <option value="inline">${t('settings.markup.typeInline')}</option>
+              <option value="block">${t('settings.markup.typeBlock')}</option>
+            </select>
+            <select .value=${s.format || ''}
+                    @change=${(e) => this._updateSnippet(i, { ...s, format: e.target.value })}>
+              <option value="">${t('settings.markup.formatAll')}</option>
+              <option value="adoc">AsciiDoc</option>
+              <option value="md">Markdown</option>
+            </select>
+            <input class="sc-input"
+                   .value=${s.shortcut || ''} placeholder="${t('settings.markup.shortcut')}"
+                   data-sc-idx=${i}
+                   @focus=${this._startSnippetRecording}
+                   @blur=${this._stopSnippetRecording}
+                   @keydown=${this._captureSnippetKey} />
+            <button class="sn-delete" @click=${() => this._deleteSnippet(i)} title="${t('settings.markup.delete')}">✕</button>
+          </div>
+          <div class="snippet-bottom">
+            <textarea .value=${s.template} placeholder="${t('settings.markup.template')}: {selected} ..."
+                      @input=${(e) => this._updateSnippet(i, { ...s, template: e.target.value })}></textarea>
+          </div>
+        </div>
+      `)}
+    `;
+  }
+
+  _addSnippet() {
+    const id = 'snippet_' + Date.now();
+    this.customSnippets = [...this.customSnippets, { id, name: '', template: '', shortcut: '', is_inline: true, format: '' }];
+  }
+
+  _updateSnippet(index, updated) {
+    const copy = [...this.customSnippets];
+    copy[index] = updated;
+    this.customSnippets = copy;
+  }
+
+  _deleteSnippet(index) {
+    this.customSnippets = this.customSnippets.filter((_, i) => i !== index);
+  }
+
+  _startSnippetRecording(e) {
+    e.target.classList.add('recording');
+    e.target.value = '';
+  }
+
+  _stopSnippetRecording(e) {
+    const input = e.target;
+    input.classList.remove('recording');
+    const idx = parseInt(input.dataset.scIdx);
+    if (!input.value.trim() && this.customSnippets[idx]) {
+      input.value = this.customSnippets[idx].shortcut || '';
+    }
+  }
+
+  _captureSnippetKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      const idx = parseInt(e.target.dataset.scIdx);
+      e.target.value = this.customSnippets[idx]?.shortcut || '';
+      e.target.blur();
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const idx = parseInt(e.target.dataset.scIdx);
+      this._updateSnippet(idx, { ...this.customSnippets[idx], shortcut: '' });
+      e.target.value = '';
+      return;
+    }
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+    const parts = [];
+    if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    parts.push(keyFromEvent(e));
+    const combo = parts.join('+');
+    const idx = parseInt(e.target.dataset.scIdx);
+    this._updateSnippet(idx, { ...this.customSnippets[idx], shortcut: combo });
+    e.target.value = combo;
   }
 }
 

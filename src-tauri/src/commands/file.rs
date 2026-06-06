@@ -1,3 +1,4 @@
+use crate::utils::normalize_path;
 use serde::Serialize;
 use std::path::Path;
 use tokio::fs;
@@ -60,7 +61,7 @@ fn list_dir_recursive(
                 continue;
             }
 
-            let path_str = entry.path().to_string_lossy().to_string();
+            let path_str = normalize_path(&entry.path().to_string_lossy());
             let is_dir = entry
                 .file_type()
                 .await
@@ -101,7 +102,7 @@ pub async fn pick_directory(
     let dir = tokio::task::spawn_blocking(move || {
         app.dialog().file().blocking_pick_folder()
     }).await.map_err(|e| format!("选择目录失败: {}", e))?;
-    Ok(dir.map(|p| p.to_string()))
+    Ok(dir.map(|p| normalize_path(&p.to_string())))
 }
 
 #[tauri::command]
@@ -136,7 +137,7 @@ pub async fn create_dir(path: String) -> Result<(), String> {
         .map_err(|e| format!("创建目录失败: {}", e))
 }
 
-/// 递归列出目录下所有 .adoc/.asciidoc/.txt 文件（用于 include 补全）
+/// 递归列出目录下所有 .adoc/.asciidoc/.txt/.md 文件（用于 include/链接补全）
 #[tauri::command]
 pub async fn list_all_adoc_files(path: String) -> Result<Vec<String>, String> {
     list_adoc_recursive(path).await
@@ -159,7 +160,7 @@ fn list_adoc_recursive(
             if name.starts_with('.') {
                 continue;
             }
-            let path_str = entry.path().to_string_lossy().to_string();
+            let path_str = normalize_path(&entry.path().to_string_lossy());
             let is_dir = entry
                 .file_type()
                 .await
@@ -171,6 +172,8 @@ fn list_adoc_recursive(
             } else if name.ends_with(".adoc")
                 || name.ends_with(".asciidoc")
                 || name.ends_with(".txt")
+                || name.ends_with(".md")
+                || name.ends_with(".markdown")
             {
                 files.push(path_str);
             }
@@ -197,19 +200,56 @@ pub async fn get_file_mtime(path: String) -> Result<u64, String> {
 #[tauri::command]
 pub async fn pick_save_file(
     app: tauri::AppHandle,
+    dir: String,
     file_name: String,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
+    // 将前端统一路径（/分隔）还原为原生路径，供原生对话框使用
+    let native_dir = dir.replace('/', std::path::MAIN_SEPARATOR.encode_utf8(&mut [0u8; 4]));
     let path = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        let mut dialog = app.dialog().file()
             .set_file_name(&file_name)
             .add_filter("AsciiDoc", &["adoc", "asciidoc", "txt"])
-            .blocking_save_file()
+            .add_filter("Markdown", &["md", "markdown"]);
+        if !native_dir.is_empty() {
+            dialog = dialog.set_directory(&native_dir);
+        }
+        dialog.blocking_save_file()
     })
     .await
     .map_err(|e| format!("选择路径失败: {}", e))?;
-    Ok(path.map(|p| p.to_string()))
+    Ok(path.map(|p| normalize_path(&p.to_string())))
+}
+
+/// 用系统默认程序打开文件
+#[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err("文件不存在".into());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        tokio::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        tokio::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tokio::process::Command::new("cmd")
+            .args(["/c", "start", "", &path])
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    Ok(())
 }
 
 /// 在系统文件管理器中显示文件
@@ -235,8 +275,10 @@ pub async fn reveal_in_shell(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
+        // explorer 需要 \ 分隔的本地路径
+        let native_path = path.replace('/', "\\");
         tokio::process::Command::new("explorer")
-            .args(["/select,", &path])
+            .args(["/select,", &native_path])
             .spawn()
             .map_err(|e| format!("打开失败: {}", e))?;
     }

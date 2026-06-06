@@ -1,3 +1,9 @@
+export function untitledName(path) {
+  const match = path.match(/^__untitled_(\d+)_/);
+  if (match) return `untitled-${match[1]}.adoc`;
+  return 'untitled.adoc';
+}
+
 class EditorState {
   constructor() {
     this.files = new Map();
@@ -82,7 +88,7 @@ class EditorState {
         const state = this.files.get(path);
         return {
           path,
-          name: path.startsWith('__untitled_') ? 'untitled.adoc' : path.split('/').pop(),
+          name: path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop(),
           isDirty: state.isDirty,
         };
       });
@@ -92,6 +98,39 @@ class EditorState {
     return [...this.files.entries()]
       .filter(([, f]) => f.isDirty)
       .map(([path]) => path);
+  }
+
+  /** 序列化为可持久化的 JSON（不含文件内容） */
+  serialize() {
+    return {
+      tabs: this.tabOrder
+        .filter(path => this.files.has(path))
+        .map(path => {
+          const f = this.files.get(path);
+          return { path, scrollTop: f.scrollTop, cursorPos: f.cursorPos, isDirty: f.isDirty };
+        }),
+      activeFilePath: this.activeFilePath || '',
+    };
+  }
+
+  /** 从保存的元数据重建 files Map（content 为空串，后续按需加载） */
+  deserialize(data) {
+    this.files.clear();
+    this.tabOrder = [];
+    this.activeFilePath = null;
+    if (data && data.tabs) {
+      for (const tab of data.tabs) {
+        this.files.set(tab.path, {
+          content: '',
+          scrollTop: tab.scroll_top ?? tab.scrollTop ?? 0,
+          cursorPos: tab.cursor_pos ?? tab.cursorPos ?? 0,
+          isDirty: tab.is_dirty ?? tab.isDirty ?? false,
+        });
+        this.tabOrder.push(tab.path);
+      }
+      this.activeFilePath = (data.active_file_path || data.activeFilePath) || null;
+    }
+    this._notify();
   }
 
   onChange(fn) {

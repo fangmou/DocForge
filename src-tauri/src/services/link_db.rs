@@ -1,3 +1,4 @@
+use crate::utils::normalize_path as to_forward_slash;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::{params, Connection};
@@ -17,8 +18,9 @@ static RE_INCLUDE: Lazy<Regex> = Lazy::new(|| {
 static RE_HEADING: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(={1,6})\s+(.+)").unwrap()
 });
-static RE_SUBTITLE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\.{1,5})\s+(.+)").unwrap()
+/// 块分隔符：4 个及以上相同字符（表格用 |=== 单独处理）
+static RE_BLOCK_DELIM: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(-{4,}|\.{4,}|_{4,}|\*{4,}|/{4,}|={4,}|`{3,}|~{3,})\s*$").unwrap()
 });
 
 #[derive(Debug, Clone, Serialize)]
@@ -269,6 +271,17 @@ impl LinkDb {
         .collect()
     }
 
+    pub fn get_tags_for_file(&self, file_path: &str) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT tag FROM tags WHERE file_path = ?1")
+            .unwrap();
+        stmt.query_map(params![file_path], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
     pub fn get_files_by_tag(&self, tag: &str) -> Vec<String> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
@@ -372,7 +385,7 @@ pub fn parse_file(
 ) -> FileParseResult {
     let dir = std::path::Path::new(file_path)
         .parent()
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| to_forward_slash(&p.to_string_lossy()))
         .unwrap_or_default();
 
     let mut title = String::new();
@@ -380,8 +393,28 @@ pub fn parse_file(
     let mut keywords = Vec::new();
     let mut headings = Vec::new();
 
+    // 块上下文状态
+    let mut in_block = false;
+    let mut in_table = false;
+
     for (i, line) in content.lines().enumerate() {
         let trimmed = line.trim();
+
+        // --- 块边界检测 ---
+        // 表格 |===（单独处理，不和其他块共用状态）
+        if trimmed == "|===" {
+            in_table = !in_table;
+            continue;
+        }
+        // 通用块分隔符（代码块 ----、示例块 ====、说明块 **** 等）
+        if RE_BLOCK_DELIM.is_match(trimmed) {
+            in_block = !in_block;
+            continue;
+        }
+        // 块内跳过标题和链接解析
+        if in_table || in_block {
+            continue;
+        }
 
         // 标题（取第一个 = 开头的）
         if title.is_empty() {
@@ -404,16 +437,8 @@ pub fn parse_file(
             }
         }
 
-        // 大纲标题
+        // 大纲标题（仅 = 语法，. 不是大纲标题）
         if let Some(cap) = RE_HEADING.captures(line) {
-            let level = cap.get(1).unwrap().as_str().len();
-            let text = cap.get(2).unwrap().as_str().trim().to_string();
-            headings.push(HeadingEntry {
-                line: i + 1,
-                level,
-                text,
-            });
-        } else if let Some(cap) = RE_SUBTITLE.captures(line) {
             let level = cap.get(1).unwrap().as_str().len();
             let text = cap.get(2).unwrap().as_str().trim().to_string();
             headings.push(HeadingEntry {
@@ -520,14 +545,24 @@ pub fn add_tag_to_content(content: &str, tag: &str) -> String {
         }
         result[idx] = format!(":keywords: {}", tags.join(", "));
     } else {
-        // 在标题行后插入
-        let mut insert_at = 1;
+        // 在标题行后插入；无标题行时插入文件开头
+        let mut insert_at = 0;
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with('=') && i == 0 {
+            let trimmed = line.trim();
+            // 检测 AsciiDoc 标题（= ）和 Markdown 标题（# ）
+            if i == 0 && (trimmed.starts_with("= ") || trimmed.starts_with("# ")) {
                 insert_at = i + 1;
                 break;
             }
-            insert_at = i + 1;
+            // 跳过已有的头部属性行（:xxx:），在其后插入
+            let prev = if i > 0 { lines[i - 1].trim() } else { "" };
+            if i == 0 || prev.starts_with('=') || prev.starts_with('#') || prev.starts_with(':') {
+                if trimmed.starts_with(':') {
+                    insert_at = i + 1;
+                    continue;
+                }
+            }
+            break;
         }
         result.insert(insert_at, format!(":keywords: {}", tag));
     }
@@ -589,7 +624,7 @@ pub fn collect_adoc_files<'a>(
             if name.starts_with('.') {
                 continue;
             }
-            let path = entry.path().to_string_lossy().to_string();
+            let path = to_forward_slash(&entry.path().to_string_lossy());
             let is_dir = entry
                 .file_type()
                 .await

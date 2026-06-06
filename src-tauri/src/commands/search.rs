@@ -1,3 +1,4 @@
+use crate::utils::normalize_path;
 use serde::Serialize;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -57,7 +58,7 @@ fn search_dir_plain<'a>(
         {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with('.') { continue; }
-            let path_str = entry.path().to_string_lossy().to_string();
+            let path_str = normalize_path(&entry.path().to_string_lossy());
             let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
 
             if is_dir {
@@ -124,7 +125,7 @@ fn search_dir_regex<'a>(
         {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with('.') { continue; }
-            let path_str = entry.path().to_string_lossy().to_string();
+            let path_str = normalize_path(&entry.path().to_string_lossy());
             let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
             if is_dir {
                 search_dir_regex(&path_str, re, results).await?;

@@ -2,9 +2,10 @@ import { LitElement, html, css, svg } from 'lit';
 import { pickDirectory } from '../services/file-service.js';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
-import { exportToHtml, checkAsciidoctorPdf, exportToPdf, openInBrowser } from '../services/export-service.js';
+import { exportToHtml, checkAsciidoctorPdf, exportToPdf, openInBrowser, checkPandoc, exportToDocx, pickDocxFile, importDocx } from '../services/export-service.js';
 import { t } from '../services/i18n.js';
 import { shortcutRegistry } from '../services/shortcut-registry.js';
+import { getFormat } from '../services/format-commands.js';
 
 // Lucide 风格统一 SVG 图标 (viewBox 0 0 24 24, stroke 2)
 const icons = {
@@ -12,6 +13,9 @@ const icons = {
   folder: svg`<path d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.93a2 2 0 01-1.66-.9l-.82-1.2A2 2 0 007.93 3H4a2 2 0 00-2 2v13c0 1.1.9 2 2 2z"/>`,
   plus: svg`<path d="M12 5v14M5 12h14"/>`,
   save: svg`<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>`,
+  undo: svg`<path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 00-4-4H4"/>`,
+  redo: svg`<path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 014-4h12"/>`,
+  edit: svg`<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>`,
   eye: svg`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`,
   wrap: svg`<path d="M3 6h18M3 12h15a3 3 0 110 6h-4m0 0l2-2m-2 2l2 2M3 18h7"/>`,
   search: svg`<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>`,
@@ -22,9 +26,13 @@ const icons = {
   sun: svg`<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>`,
   moon: svg`<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>`,
   chevron: svg`<path d="M6 9l6 6 6-6"/>`,
-  template: svg`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>`,
   link: svg`<path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>`,
   graph: svg`<circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="19" r="3"/><path d="M7.5 8l3 7.5M16.5 8l-3 7.5"/>`,
+  template: svg`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>`,
+  tags: svg`<path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><circle cx="7" cy="7" r="1.5"/>`,
+  bold: svg`<path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z"/><path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z"/>`,
+  italic: svg`<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>`,
+  code: svg`<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>`,
 };
 
 function icon(name, cls = 'ic') {
@@ -36,7 +44,8 @@ class ToolbarMain extends LitElement {
   static properties = {
     _activePanel: { state: true },
     _theme: { state: true },
-    _dropdown: { state: true }, // 'new' | 'export' | ''
+    _currentFormat: { state: true },
+    _dropdown: { state: true }, // 'new' | 'edit' | 'markup' | 'search' | 'export' | ''
   };
 
   static styles = css`
@@ -78,38 +87,36 @@ class ToolbarMain extends LitElement {
     button:active {
       background: var(--border-subtle);
     }
+    /* 带文字的按钮 */
+    .btn-text {
+      padding: 0 8px;
+      font-size: 12px;
+      gap: 4px;
+    }
     /* SVG 图标 */
     .ic {
       width: 15px;
       height: 15px;
       flex-shrink: 0;
     }
-    /* 小箭头 */
-    .chevron {
-      width: 12px;
-      height: 12px;
-      opacity: 0.5;
+    /* 小箭头图标 */
+    .ic-sm {
+      width: 11px;
+      height: 11px;
+      opacity: 0.6;
     }
     /* 激活态 */
     button.on {
       background: var(--bg-3);
       color: var(--accent);
     }
-    button.on .ic {
-      color: var(--accent);
-    }
-    /* 分组容器 */
-    .group {
-      display: flex;
-      align-items: center;
-      gap: 1px;
-    }
-    /* 分隔符 */
+    /* 分隔线 */
     .sep {
+      display: inline-block;
       width: 1px;
-      height: 16px;
+      height: 18px;
       background: var(--border-subtle);
-      margin: 0 6px;
+      margin: 0 4px;
       flex-shrink: 0;
     }
     .spacer { flex: 1; }
@@ -117,7 +124,6 @@ class ToolbarMain extends LitElement {
     .dropdown {
       position: absolute;
       top: 100%;
-      left: 0;
       background: var(--bg-3);
       border: 1px solid var(--border-medium);
       border-radius: 6px;
@@ -176,6 +182,7 @@ class ToolbarMain extends LitElement {
     super();
     this._activePanel = '';
     this._theme = 'light';
+    this._currentFormat = null;
     this._dropdown = '';
     this._langHandler = () => this.requestUpdate();
     this._clickOutside = (e) => {
@@ -194,16 +201,23 @@ class ToolbarMain extends LitElement {
       'outline-panel-toggled': (v) => { this._activePanel = v ? 'outline' : (this._activePanel === 'outline' ? '' : this._activePanel); },
       'template-panel-toggled': (v) => { this._activePanel = v ? 'template' : (this._activePanel === 'template' ? '' : this._activePanel); },
       'backlinks-panel-toggled': (v) => { this._activePanel = v ? 'backlinks' : (this._activePanel === 'backlinks' ? '' : this._activePanel); },
+      'graph-panel-toggled': (v) => { this._activePanel = v ? 'graph' : (this._activePanel === 'graph' ? '' : this._activePanel); },
+      'tags-panel-toggled': (v) => { this._activePanel = v ? 'tags' : (this._activePanel === 'tags' ? '' : this._activePanel); },
+      'plugin-panel-toggled': (v) => { this._activePanel = v ? 'plugin' : (this._activePanel === 'plugin' ? '' : this._activePanel); },
     };
     for (const [name, handler] of Object.entries(this._panelHandlers)) {
       eventBus.on(name, handler);
     }
     this._themeHandler = (theme) => { this._theme = theme; };
     eventBus.on('theme-changed', this._themeHandler);
+    this._formatHandler = (format) => { this._currentFormat = format; };
+    eventBus.on('file-format-changed', this._formatHandler);
     this._exportHtmlHandler = () => this._exportHtml();
     this._exportPdfHandler = () => this._exportPdf();
+    this._exportDocxHandler = () => this._exportDocx();
     eventBus.on('export-html', this._exportHtmlHandler);
     eventBus.on('export-pdf', this._exportPdfHandler);
+    eventBus.on('export-docx', this._exportDocxHandler);
     document.addEventListener('click', this._clickOutside);
     import('../services/config-service.js').then(({ loadEditorConfig }) => {
       loadEditorConfig().then(c => { if (c.theme) this._theme = c.theme; }).catch(() => {});
@@ -217,20 +231,18 @@ class ToolbarMain extends LitElement {
       eventBus.off(name, handler);
     }
     if (this._themeHandler) eventBus.off('theme-changed', this._themeHandler);
+    if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
     if (this._exportHtmlHandler) eventBus.off('export-html', this._exportHtmlHandler);
     if (this._exportPdfHandler) eventBus.off('export-pdf', this._exportPdfHandler);
+    if (this._exportDocxHandler) eventBus.off('export-docx', this._exportDocxHandler);
     document.removeEventListener('click', this._clickOutside);
   }
 
   _togglePanel(panel) {
     this._dropdown = '';
     const isClosing = this._activePanel === panel;
-
-    // 先关闭所有已打开的面板
     eventBus.emit('force-close-all-panels');
     this._activePanel = '';
-
-    // 如果不是关闭当前面板，则打开新面板
     if (!isClosing) {
       this._activePanel = panel;
       const eventMap = {
@@ -242,6 +254,7 @@ class ToolbarMain extends LitElement {
         'graph': () => eventBus.emit('toggle-graph-view'),
         'plugin': () => eventBus.emit('toggle-plugin-manager'),
         'tags': () => eventBus.emit('toggle-tags-panel'),
+        'export-history': () => eventBus.emit('toggle-export-history'),
       };
       if (eventMap[panel]) eventMap[panel]();
     }
@@ -253,6 +266,14 @@ class ToolbarMain extends LitElement {
     eventBus.emit('theme-changed', next);
   }
 
+  /** 从菜单打开导出历史面板（强制打开，不走 toggle 逻辑） */
+  _openExportHistory() {
+    this._dropdown = '';
+    this._activePanel = 'export-history';
+    eventBus.emit('force-close-all-panels');
+    eventBus.emit('toggle-export-history');
+  }
+
   _closeDropdown() {
     this._dropdown = '';
   }
@@ -260,111 +281,265 @@ class ToolbarMain extends LitElement {
   render() {
     return html`
       <!-- 侧栏切换 -->
-      <button title="${t('toolbar.toggleSidebar')} (${shortcutRegistry.getShortcut('toggleSidebar')})" @click=${() => this.dispatchEvent(new CustomEvent('toggle-sidebar'))}>
-        ${icon('menu')}
+      <button title="${t('toolbar.toggleSidebar')} (${shortcutRegistry.getShortcut('toggleSidebar')})"
+              @click=${() => this.dispatchEvent(new CustomEvent('toggle-sidebar'))}>${icon('menu')}</button>
+      <span class="sep"></span>
+
+      <!-- 文件操作组：常用操作图标+文字 -->
+      <button class="btn-text" title="${t('menu.openDirectory')}"
+              @click=${this._openDir}>${icon('folder')} ${t('toolbar.btnOpen')}</button>
+      <button class="btn-text" @click=${(e) => this._toggleDropdown('new', e)}>
+        ${icon('plus')} ${t('toolbar.btnNew')} ${icon('chevron', 'ic-sm')}
       </button>
+      <button class="btn-text" title="${t('toolbar.save')} (${shortcutRegistry.getShortcut('save')})"
+              @click=${() => eventBus.emit('save-file')}>${icon('save')} ${t('toolbar.btnSave')}</button>
+      <span class="sep"></span>
 
-      <div class="sep"></div>
-
-      <!-- 文件组 -->
-      <div class="group">
-        <button title="${t('toolbar.openDirectory')}" @click=${this._openDir}>${icon('folder')}</button>
-        <button title="${t('toolbar.btnNew')} (${shortcutRegistry.getShortcut('newFile')})" @click=${(e) => this._toggleDropdown('new', e)}>
-          ${icon('plus')}
-          ${icon('chevron', 'chevron')}
+      <!-- 编辑快捷组：撤销/重做直出，高级操作下拉 -->
+      <button title="${t('toolbar.undo')} (${shortcutRegistry.getShortcut('undo')})"
+              @click=${() => eventBus.emit('editor-undo')}>${icon('undo')}</button>
+      <button title="${t('toolbar.redo')} (${shortcutRegistry.getShortcut('redo')})"
+              @click=${() => eventBus.emit('editor-redo')}>${icon('redo')}</button>
+      <button title="${t('toolbar.edit')}" @click=${(e) => this._toggleDropdown('edit', e)}>
+        ${icon('edit')} ${icon('chevron', 'ic-sm')}
+      </button>
+      ${this._currentFormat ? html`
+        <span class="sep"></span>
+        <button title="${t('markup.bold')} (${shortcutRegistry.getShortcut('markupBold')})"
+                @click=${() => eventBus.emit('editor-markup-inline', { id: 'bold' })}>${icon('bold')}</button>
+        <button title="${t('markup.italic')} (${shortcutRegistry.getShortcut('markupItalic')})"
+                @click=${() => eventBus.emit('editor-markup-inline', { id: 'italic' })}>${icon('italic')}</button>
+        <button title="${t('markup.link')} (${shortcutRegistry.getShortcut('markupLink')})"
+                @click=${() => eventBus.emit('editor-markup-link')}>${icon('link')}</button>
+        <button title="${t('toolbar.markup')}" @click=${(e) => this._toggleDropdown('markup', e)}>
+          ${icon('code')} ${icon('chevron', 'ic-sm')}
         </button>
-        <button title="${t('toolbar.save')} (${shortcutRegistry.getShortcut('save')})" @click=${() => eventBus.emit('save-file')}>${icon('save')}</button>
-      </div>
+      ` : ''}
+      <span class="sep"></span>
 
-      <div class="sep"></div>
+      <!-- 视图切换 -->
+      <button title="${t('toolbar.togglePreview')} (${shortcutRegistry.getShortcut('togglePreview')})"
+              @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon('eye')}</button>
+      <button title="${t('toolbar.toggleWordWrap')} (${shortcutRegistry.getShortcut('toggleWordWrap')})"
+              @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
+      <span class="sep"></span>
 
-      <!-- 视图组 -->
-      <div class="group">
-        <button title="${t('toolbar.togglePreview')} (${shortcutRegistry.getShortcut('togglePreview')})" @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon('eye')}</button>
-        <button title="${t('toolbar.toggleWordWrap')} (${shortcutRegistry.getShortcut('toggleWordWrap')})" @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
-      </div>
-
-      <div class="sep"></div>
-
-      <!-- 面板组（带激活态） -->
-      <div class="group">
-        <button class="${this._activePanel === 'search' ? 'on' : ''}"
-                title="${t('toolbar.toggleSearch')} (${shortcutRegistry.getShortcut('search')}) / ${t('toolbar.openFindReplace')} (${shortcutRegistry.getShortcut('findReplace')})"
-                @click=${(e) => this._toggleDropdown('search', e)}>
-          ${icon('search')}
-          ${icon('chevron', 'chevron')}
-        </button>
-        <button class="${this._activePanel === 'outline' ? 'on' : ''}"
-                title="${t('toolbar.toggleOutline')} (${shortcutRegistry.getShortcut('toggleOutline')})"
-                @click=${() => this._togglePanel('outline')}>${icon('list')}</button>
-        <button class="${this._activePanel === 'ai' ? 'on' : ''}"
-                title="${t('toolbar.toggleAI')} (${shortcutRegistry.getShortcut('toggleAI')})"
-                @click=${() => this._togglePanel('ai')}>${icon('sparkles')}</button>
-        <button class="${this._activePanel === 'backlinks' ? 'on' : ''}"
-                title="${t('toolbar.toggleBacklinks')} (${shortcutRegistry.getShortcut('toggleBacklinks')})"
-                @click=${() => this._togglePanel('backlinks')}>${icon('link')}</button>
-        <button class="${this._activePanel === 'graph' ? 'on' : ''}"
-                title="${t('toolbar.toggleGraph')} (${shortcutRegistry.getShortcut('toggleGraph')})"
-                @click=${() => this._togglePanel('graph')}>${icon('graph')}</button>
-        <button class="${this._activePanel === 'tags' ? 'on' : ''}"
-                title="${t('toolbar.toggleTags')} (${shortcutRegistry.getShortcut('toggleTags')})"
-                @click=${() => this._togglePanel('tags')}>🏷</button>
-      </div>
-
-      <div class="sep"></div>
-
-      <!-- 导出组 -->
-      <div class="group">
-        <button title="${t('toolbar.btnExport')}" @click=${(e) => this._toggleDropdown('export', e)}>
-          ${icon('upload')}
-          ${icon('chevron', 'chevron')}
-        </button>
-      </div>
+      <!-- 特色面板组：知识管理核心功能 -->
+      <button title="${t('toolbar.btnSearch')} (${shortcutRegistry.getShortcut('search')})"
+              @click=${(e) => this._toggleDropdown('search', e)}>
+        ${icon('search')} ${icon('chevron', 'ic-sm')}
+      </button>
+      <button class="${this._activePanel === 'outline' ? 'on' : ''}"
+              title="${t('toolbar.toggleOutline')} (${shortcutRegistry.getShortcut('toggleOutline')})"
+              @click=${() => this._togglePanel('outline')}>${icon('list')}</button>
+      <button class="${this._activePanel === 'ai' ? 'on' : ''}"
+              title="${t('toolbar.toggleAI')} (${shortcutRegistry.getShortcut('toggleAI')})"
+              @click=${() => this._togglePanel('ai')}>${icon('sparkles')}</button>
+      <button class="${this._activePanel === 'backlinks' ? 'on' : ''}"
+              title="${t('toolbar.toggleBacklinks')} (${shortcutRegistry.getShortcut('toggleBacklinks')})"
+              @click=${() => this._togglePanel('backlinks')}>${icon('link')}</button>
+      <button class="${this._activePanel === 'graph' ? 'on' : ''}"
+              title="${t('toolbar.toggleGraph')} (${shortcutRegistry.getShortcut('toggleGraph')})"
+              @click=${() => this._togglePanel('graph')}>${icon('graph')}</button>
+      <button class="${this._activePanel === 'tags' ? 'on' : ''}"
+              title="${t('toolbar.toggleTags')} (${shortcutRegistry.getShortcut('toggleTags')})"
+              @click=${() => this._togglePanel('tags')}>${icon('tags')}</button>
 
       <div class="spacer"></div>
 
-      <!-- 右侧 -->
+      <!-- 右侧：导出、插件、设置、主题 -->
+      <button title="${t('toolbar.btnExport')}"
+              @click=${(e) => this._toggleDropdown('export', e)}>
+        ${icon('upload')} ${icon('chevron', 'ic-sm')}
+      </button>
       <button class="${this._activePanel === 'plugin' ? 'on' : ''}"
               title="${t('toolbar.togglePluginManager')} (${shortcutRegistry.getShortcut('togglePlugin')})"
               @click=${() => this._togglePanel('plugin')}>🧩</button>
-      <button title="${t('toolbar.openSettings')}" @click=${() => this.dispatchEvent(new CustomEvent('open-settings'))}>${icon('settings')}</button>
+      <button title="${t('toolbar.openSettings')}"
+              @click=${() => this.dispatchEvent(new CustomEvent('open-settings'))}>${icon('settings')}</button>
       <button class="theme-btn" @click=${this._toggleTheme}>
         ${this._theme === 'dark' ? icon('moon') : icon('sun')}
       </button>
 
-      <!-- 下拉菜单 -->
+      <!-- 新建下拉 -->
       ${this._dropdown === 'new' ? html`
-        <div class="dropdown" style="left: ${this._newDropdownLeft}px" @click=${this._closeDropdown}>
+        <div class="dropdown" style="left: ${this._dropdownLeft}px" @click=${this._closeDropdown}>
           <button class="dropdown-item" @click=${() => eventBus.emit('new-file')}>
-            ${icon('plus')} <span class="label">${t('toolbar.newFile')}</span>
+            <span class="label">${t('toolbar.newFile')}</span>
             <span class="shortcut">${shortcutRegistry.getShortcut('newFile')}</span>
           </button>
+          <button class="dropdown-item" @click=${this._importDocx}>
+            <span class="label">${t('toolbar.importDocx')}</span>
+          </button>
           <button class="dropdown-item" @click=${() => this._togglePanel('template')}>
-            ${icon('template')} <span class="label">${t('template.panelTitle')}</span>
+            <span class="label">${t('template.panelTitle')}</span>
           </button>
         </div>
       ` : ''}
-      ${this._dropdown === 'export' ? html`
-        <div class="dropdown" style="left: ${this._exportDropdownLeft}px" @click=${this._closeDropdown}>
-          <button class="dropdown-item" @click=${this._exportHtml}>
-            ${icon('upload')} <span class="label">${t('toolbar.exportHtml')}</span>
-            <span class="shortcut">${shortcutRegistry.getShortcut('exportHtml')}</span>
+
+      <!-- 编辑下拉 -->
+      ${this._dropdown === 'edit' ? html`
+        <div class="dropdown" style="left: ${this._dropdownLeft}px; min-width: 210px" @click=${this._closeDropdown}>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-undo')}>
+            <span class="label">${t('toolbar.undo')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('undo')}</span>
           </button>
-          <button class="dropdown-item" @click=${this._exportPdf}>
-            ${icon('upload')} <span class="label">${t('toolbar.exportPdf')}</span>
-            <span class="shortcut">${shortcutRegistry.getShortcut('exportPdf')}</span>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-redo')}>
+            <span class="label">${t('toolbar.redo')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('redo')}</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-select-all')}>
+            <span class="label">${t('edit.selectAll')}</span>
+            <span class="shortcut">Ctrl+A</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-select-line')}>
+            <span class="label">${t('edit.selectLine')}</span>
+            <span class="shortcut">Alt+L</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-select-parent-syntax')}>
+            <span class="label">${t('edit.selectParentSyntax')}</span>
+            <span class="shortcut">Ctrl+I</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-indent-more')}>
+            <span class="label">${t('edit.indentMore')}</span>
+            <span class="shortcut">Ctrl+]</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-indent-less')}>
+            <span class="label">${t('edit.indentLess')}</span>
+            <span class="shortcut">Ctrl+[</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-indent-selection')}>
+            <span class="label">${t('edit.indentSelection')}</span>
+            <span class="shortcut">Ctrl+Alt+\\</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-move-line-up')}>
+            <span class="label">${t('edit.moveLineUp')}</span>
+            <span class="shortcut">Alt+↑</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-move-line-down')}>
+            <span class="label">${t('edit.moveLineDown')}</span>
+            <span class="shortcut">Alt+↓</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-copy-line-up')}>
+            <span class="label">${t('edit.copyLineUp')}</span>
+            <span class="shortcut">Shift+Alt+↑</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-copy-line-down')}>
+            <span class="label">${t('edit.copyLineDown')}</span>
+            <span class="shortcut">Shift+Alt+↓</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-delete-line')}>
+            <span class="label">${t('edit.deleteLine')}</span>
+            <span class="shortcut">Ctrl+Shift+K</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-insert-blank-line')}>
+            <span class="label">${t('edit.insertBlankLine')}</span>
+            <span class="shortcut">Ctrl+Enter</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-toggle-comment')}>
+            <span class="label">${t('edit.toggleComment')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('toggleLineComment')}</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-toggle-block-comment')}>
+            <span class="label">${t('edit.toggleBlockComment')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('toggleBlockComment')}</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-matching-bracket')}>
+            <span class="label">${t('edit.matchingBracket')}</span>
+            <span class="shortcut">Ctrl+Shift+\\</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-add-cursor-above')}>
+            <span class="label">${t('edit.addCursorAbove')}</span>
+            <span class="shortcut">Ctrl+Alt+↑</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('editor-add-cursor-below')}>
+            <span class="label">${t('edit.addCursorBelow')}</span>
+            <span class="shortcut">Ctrl+Alt+↓</span>
           </button>
         </div>
       ` : ''}
+
+      <!-- 标记下拉 -->
+      ${this._dropdown === 'markup' && this._currentFormat ? html`
+        <div class="dropdown" style="left: ${this._dropdownLeft}px; min-width: 200px; max-height: 70vh; overflow-y: auto" @click=${this._closeDropdown}>
+          ${this._currentFormat.inlineMarkup.map(m => html`
+            <button class="dropdown-item" @click=${() => eventBus.emit('editor-markup-inline', { id: m.id })}>
+              <span class="label">${t(m.labelKey)} ${m.open}${m.close}</span>
+              ${m.shortcutId ? html`<span class="shortcut">${shortcutRegistry.getShortcut(m.shortcutId)}</span>` : ''}
+            </button>
+          `)}
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          ${Array.from({ length: this._currentFormat.heading.levels }, (_, i) => i + 1).map(level => html`
+            <button class="dropdown-item" @click=${() => eventBus.emit('editor-heading', level)}>
+              <span class="label">${t('markup.heading', { level })} ${this._currentFormat.heading.prefix(level).trim()}</span>
+            </button>
+          `)}
+          ${this._currentFormat.listMarkers.map(lm => html`
+            <button class="dropdown-item" @click=${() => eventBus.emit('editor-list', lm.marker)}>
+              <span class="label">${t(lm.labelKey)} ${lm.marker.trim()}</span>
+            </button>
+          `)}
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          ${this._currentFormat.blocks.map(b => html`
+            <button class="dropdown-item" @click=${() => eventBus.emit('editor-insert-block', { id: b.id })}>
+              <span class="label">${t(b.labelKey)}</span>
+            </button>
+          `)}
+          ${this._currentFormat.tableAlign ? html`
+            <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+            <button class="dropdown-item" @click=${() => eventBus.emit('editor-align-table')}>
+              <span class="label">${t('markup.alignTable')}</span>
+              <span class="shortcut">${shortcutRegistry.getShortcut('alignTable')}</span>
+            </button>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      <!-- 搜索下拉 -->
       ${this._dropdown === 'search' ? html`
-        <div class="dropdown" style="left: ${this._searchDropdownLeft}px" @click=${this._closeDropdown}>
+        <div class="dropdown" style="left: ${this._dropdownLeft}px" @click=${this._closeDropdown}>
           <button class="dropdown-item" @click=${() => this._togglePanel('search')}>
-            ${icon('search')} <span class="label">${t('toolbar.btnSearch')}</span>
+            <span class="label">${t('toolbar.btnSearch')}</span>
             <span class="shortcut">${shortcutRegistry.getShortcut('search')}</span>
           </button>
           <button class="dropdown-item" @click=${() => { this._closeDropdown(); eventBus.emit('open-find-replace'); }}>
-            ${icon('wrap')} <span class="label">${t('toolbar.btnFindReplace')}</span>
+            <span class="label">${t('toolbar.btnFindReplace')}</span>
             <span class="shortcut">${shortcutRegistry.getShortcut('findReplace')}</span>
+          </button>
+          <button class="dropdown-item" @click=${() => { this._closeDropdown(); eventBus.emit('goto-line'); }}>
+            <span class="label">${t('shortcuts.gotoLine')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('gotoLine')}</span>
+          </button>
+        </div>
+      ` : ''}
+
+      <!-- 导出下拉 -->
+      ${this._dropdown === 'export' ? html`
+        <div class="dropdown" style="right: ${this._dropdownRight}px" @click=${this._closeDropdown}>
+          <button class="dropdown-item" @click=${this._exportHtml}>
+            <span class="label">${t('toolbar.exportHtml')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('exportHtml')}</span>
+          </button>
+          <button class="dropdown-item" @click=${this._exportPdf}>
+            <span class="label">${t('toolbar.exportPdf')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('exportPdf')}</span>
+          </button>
+          <button class="dropdown-item" @click=${this._exportDocx}>
+            <span class="label">${t('toolbar.exportDocx')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('exportDocx')}</span>
+          </button>
+          <hr style="margin: 4px 8px; border: none; border-top: 1px solid var(--border-subtle);">
+          <button class="dropdown-item" @click=${this._openExportHistory}>
+            <span class="label">${t('exportHistory.title')}</span>
+          </button>
+          <button class="dropdown-item" @click=${() => eventBus.emit('close-active-tab')}>
+            <span class="label">${t('menu.closeTab')}</span>
+            <span class="shortcut">${shortcutRegistry.getShortcut('closeTab')}</span>
           </button>
         </div>
       ` : ''}
@@ -374,14 +549,12 @@ class ToolbarMain extends LitElement {
   _toggleDropdown(which, e) {
     e.stopPropagation();
     this._dropdown = this._dropdown === which ? '' : which;
-    // 记录按钮位置用于下拉菜单定位
     if (this._dropdown) {
       const btn = e.currentTarget;
       const rect = btn.getBoundingClientRect();
       const hostRect = this.getBoundingClientRect();
-      if (which === 'new') this._newDropdownLeft = rect.left - hostRect.left;
-      else if (which === 'export') this._exportDropdownLeft = rect.left - hostRect.left;
-      else if (which === 'search') this._searchDropdownLeft = rect.left - hostRect.left;
+      this._dropdownLeft = rect.left - hostRect.left;
+      this._dropdownRight = hostRect.right - rect.right;
     }
   }
 
@@ -394,6 +567,48 @@ class ToolbarMain extends LitElement {
     }
   }
 
+  async _importDocx() {
+    this._dropdown = '';
+    try {
+      const { getCurrentWorkspace } = await import('../services/config-service.js');
+      const ws = await getCurrentWorkspace();
+      if (!ws) {
+        eventBus.emit('status-message', t('msg.noWorkspace'));
+        return;
+      }
+      const hasPandoc = await checkPandoc();
+      if (!hasPandoc) {
+        eventBus.emit('status-message', t('msg.noPandocImport'));
+        return;
+      }
+      const docxPath = await pickDocxFile();
+      if (!docxPath) return;
+
+      // 同名 .adoc 已存在时确认覆盖
+      const stem = docxPath.replace(/.*\//, '').replace(/\.[^.]+$/, '');
+      const adocPath = ws.replace(/\/$/, '') + '/' + stem + '.adoc';
+      const { readFile } = await import('../services/file-service.js');
+      let existing;
+      try { existing = await readFile(adocPath); } catch (_) {}
+      if (existing !== undefined) {
+        const { showConfirm } = await import('../services/dialog.js');
+        const ok = await showConfirm(t('msg.confirmOverwrite', { name: stem + '.adoc' }));
+        if (!ok) return;
+      }
+
+      const result = await importDocx(docxPath, ws);
+      if (result) {
+        const content = await readFile(result);
+        editorState.openFile(result, content);
+        eventBus.emit('file-opened', { path: result, content });
+        eventBus.emit('status-message', { text: t('msg.importDocxSuccess', { path: result }), path: result });
+      }
+    } catch (e) {
+      console.error('Import docx failed:', e);
+      eventBus.emit('status-message', t('msg.importDocxFailed', { error: e }));
+    }
+  }
+
   async _exportHtml() {
     try {
       const active = editorState.getActiveFile();
@@ -403,7 +618,8 @@ class ToolbarMain extends LitElement {
       }
       const result = await exportToHtml(active.content, active.path);
       if (result) {
-        eventBus.emit('status-message', t('msg.exportedHtml', { path: result }));
+        eventBus.emit('status-message', { text: t('msg.exportedHtml', { path: result }), path: result });
+        this._recordExport(result, 'html');
       }
     } catch (e) {
       console.error(t('msg.exportFailed', { error: '' }), e);
@@ -422,21 +638,76 @@ class ToolbarMain extends LitElement {
         eventBus.emit('status-message', t('msg.saveBeforePdf'));
         return;
       }
-      const hasPdf = await checkAsciidoctorPdf();
-      if (hasPdf) {
-        const result = await exportToPdf(active.path);
-        if (result) eventBus.emit('status-message', t('msg.exportedPdf', { path: result }));
+      const isMd = active.path && /\.(md|markdown)$/i.test(active.path);
+      if (isMd) {
+        // Markdown: 使用 pandoc + xelatex
+        const hasPandoc = await checkPandoc();
+        if (hasPandoc) {
+          const result = await exportToPdf(active.path);
+          if (result) {
+            eventBus.emit('status-message', { text: t('msg.exportedPdf', { path: result }), path: result });
+            this._recordExport(result, 'pdf');
+          }
+        } else {
+          eventBus.emit('status-message', t('msg.noPandoc'));
+        }
       } else {
-        const adoc = (await import('@asciidoctor/core')).default();
-        const asciidoctor = adoc();
-        const html = asciidoctor.convert(active.content, { safe: 'safe', standalone: false });
-        await openInBrowser(html);
-        eventBus.emit('status-message', t('msg.noPdfOpenBrowser'));
+        // AsciiDoc: 使用 asciidoctor-pdf
+        const hasPdf = await checkAsciidoctorPdf();
+        if (hasPdf) {
+          const result = await exportToPdf(active.path);
+          if (result) {
+            eventBus.emit('status-message', { text: t('msg.exportedPdf', { path: result }), path: result });
+            this._recordExport(result, 'pdf');
+          }
+        } else {
+          const adoc = (await import('@asciidoctor/core')).default();
+          const asciidoctor = adoc();
+          const html = asciidoctor.convert(active.content, { safe: 'safe', standalone: false });
+          await openInBrowser(html);
+          eventBus.emit('status-message', t('msg.noPdfOpenBrowser'));
+        }
       }
     } catch (e) {
       console.error(t('msg.pdfExportFailed', { error: '' }), e);
       eventBus.emit('status-message', t('msg.pdfExportFailed', { error: e }));
     }
+  }
+
+  async _exportDocx() {
+    try {
+      const active = editorState.getActiveFile();
+      if (!active) {
+        eventBus.emit('status-message', t('msg.pleaseOpenFile'));
+        return;
+      }
+      if (active.path.startsWith('__untitled_')) {
+        eventBus.emit('status-message', t('msg.saveBeforeDocx'));
+        return;
+      }
+      const hasPandoc = await checkPandoc();
+      if (hasPandoc) {
+        const result = await exportToDocx(active.path);
+        if (result) {
+          eventBus.emit('status-message', { text: t('msg.exportedDocx', { path: result }), path: result });
+          this._recordExport(result, 'docx');
+        }
+      } else {
+        eventBus.emit('status-message', t('msg.noPandoc'));
+      }
+    } catch (e) {
+      console.error(t('msg.docxExportFailed', { error: '' }), e);
+      eventBus.emit('status-message', t('msg.docxExportFailed', { error: e }));
+    }
+  }
+
+  async _recordExport(path, format) {
+    try {
+      const { addExportHistory } = await import('../services/config-service.js');
+      const { editorState } = await import('../services/editor-state.js');
+      await addExportHistory(path, format, editorState.workspaceRoot || undefined);
+      eventBus.emit('export-done');
+    } catch (_) {}
   }
 }
 

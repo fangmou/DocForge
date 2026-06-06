@@ -57,6 +57,9 @@ html, body {
   font-size: 13px;
   color: var(--text-1);
   background: var(--bg-1);
+  /* 标准属性可继承到 Shadow DOM，解决暗色主题滚动条露白 */
+  scrollbar-color: var(--border-subtle) transparent;
+  scrollbar-width: thin;
 }
 
 ::-webkit-scrollbar {
@@ -64,6 +67,9 @@ html, body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {

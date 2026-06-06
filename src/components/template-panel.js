@@ -117,7 +117,9 @@ class TemplatePanel extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._toggleHandler = async () => {
-      this.visible = !this.visible;
+      const willOpen = !this.visible;
+      if (willOpen) eventBus.emit('force-close-all-panels');
+      this.visible = willOpen;
       this.classList.toggle('visible', this.visible);
       eventBus.emit('template-panel-toggled', this.visible);
       if (this.visible) {
