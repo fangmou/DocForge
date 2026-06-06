@@ -34,6 +34,7 @@ class SettingsDialog extends LitElement {
     autoSaveInterval: { type: Number },
     vimMode: { type: Boolean },
     vimEscapeSeq: { type: String },
+    defaultViewMode: { type: String },
     // 导出通用
     outputDir: { type: String },
     outputNaming: { type: String },
@@ -515,6 +516,7 @@ class SettingsDialog extends LitElement {
     this.autoSaveInterval = 3;
     this.vimMode = false;
     this.vimEscapeSeq = 'jk';
+    this.defaultViewMode = 'split';
     // 导出通用
     this.outputDir = '';
     this.outputNaming = 'title';
@@ -600,6 +602,7 @@ class SettingsDialog extends LitElement {
       this.language = ed.language || 'zh';
       this.vimMode = ed.vim_mode || false;
       this.vimEscapeSeq = ed.vim_escape_seq || 'jk';
+      this.defaultViewMode = ed.default_view_mode || 'split';
     }
 
     // 导出通用配置 + pandoc
@@ -699,6 +702,7 @@ class SettingsDialog extends LitElement {
         language: this.language,
         vim_mode: this.vimMode,
         vim_escape_seq: this.vimEscapeSeq,
+        default_view_mode: this.defaultViewMode,
       });
       eventBus.emit('font-size-set', this.fontSize);
       eventBus.emit('set-word-wrap', this.wordWrap);
@@ -1011,6 +1015,14 @@ class SettingsDialog extends LitElement {
             <option value="en">English</option>
           </select>
         </div>
+      </div>
+      <div class="field">
+        <label>${t('settings.editor.defaultViewMode')}</label>
+        <select .value=${this.defaultViewMode} @change=${(e) => this.defaultViewMode = e.target.value}>
+          <option value="split">${t('settings.editor.defaultViewModeSplit')}</option>
+          <option value="edit">${t('settings.editor.defaultViewModeEdit')}</option>
+          <option value="preview">${t('settings.editor.defaultViewModePreview')}</option>
+        </select>
       </div>
       <div class="field-row">
         <div class="field">

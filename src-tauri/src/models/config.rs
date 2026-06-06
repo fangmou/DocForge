@@ -35,6 +35,7 @@ pub struct EditorConfig {
     pub sidebar_width: u32,
     pub vim_mode: bool,
     pub vim_escape_seq: String,
+    pub default_view_mode: String,
 }
 
 impl Default for EditorConfig {
@@ -49,6 +50,7 @@ impl Default for EditorConfig {
             sidebar_width: 240,
             vim_mode: false,
             vim_escape_seq: "jk".into(),
+            default_view_mode: "split".into(),
         }
     }
 }
@@ -202,6 +204,7 @@ pub struct WorkspaceState {
     pub active_file_path: String,
     pub recent_files: Vec<RecentFile>,
     pub export_history: Vec<ExportRecord>,
+    pub view_mode: String,
 }
 
 impl Default for WorkspaceState {
@@ -211,6 +214,7 @@ impl Default for WorkspaceState {
             active_file_path: String::new(),
             recent_files: Vec::new(),
             export_history: Vec::new(),
+            view_mode: String::new(),
         }
     }
 }

@@ -189,7 +189,10 @@
   "shortcuts.toggleBacklinks": "反向链接",
   "shortcuts.toggleGraph": "知识图谱",
   "shortcuts.toggleTags": "标签",
-  "shortcuts.togglePreview": "切换预览",
+  "shortcuts.togglePreview": "切换视图模式",
+  "shortcuts.setViewSplit": "分栏视图",
+  "shortcuts.setViewEdit": "编辑视图",
+  "shortcuts.setViewPreview": "预览视图",
   "shortcuts.toggleSidebar": "切换侧栏",
   "shortcuts.togglePlugin": "插件管理",
   "shortcuts.exportHtml": "导出 HTML",
@@ -363,5 +366,14 @@
   "shortcuts.markupMono": "等宽",
   "shortcuts.markupLink": "插入链接",
   "shortcuts.alignTable": "对齐表格",
-  "shortcuts.toggleVimMode": "切换 Vim 模式"
+  "shortcuts.toggleVimMode": "切换 Vim 模式",
+
+  "statusBar.viewSplit": "分栏",
+  "statusBar.viewEdit": "编辑",
+  "statusBar.viewPreview": "预览",
+
+  "settings.editor.defaultViewMode": "默认视图模式",
+  "settings.editor.defaultViewModeSplit": "分栏（编辑+预览）",
+  "settings.editor.defaultViewModeEdit": "仅编辑",
+  "settings.editor.defaultViewModePreview": "仅预览"
 }

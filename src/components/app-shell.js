@@ -7,7 +7,7 @@ import { readFile, writeFile, deleteFile } from '../services/file-service.js';
 class AppShell extends LitElement {
   static properties = {
     sidebarVisible: { type: Boolean },
-    previewVisible: { type: Boolean },
+    viewMode: { type: String },
   };
 
   static styles = css`
@@ -61,6 +61,9 @@ class AppShell extends LitElement {
       flex: 1;
       min-width: 0;
     }
+    .editor-col.hidden {
+      display: none;
+    }
     .preview-col {
       width: 45%;
       min-width: 300px;
@@ -70,10 +73,13 @@ class AppShell extends LitElement {
       transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
     }
     .preview-col.hidden {
-      width: 0;
-      min-width: 0;
-      overflow: hidden;
-      opacity: 0;
+      display: none;
+    }
+    .preview-col.full {
+      width: 100%;
+      min-width: 100%;
+      flex: 1;
+      border-left: none;
     }
     .resize-handle {
       width: 7px;
@@ -109,7 +115,19 @@ class AppShell extends LitElement {
   constructor() {
     super();
     this.sidebarVisible = true;
-    this.previewVisible = true;
+    this.viewMode = 'split';
+    this._defaultViewMode = 'split';
+  }
+
+  get previewVisible() { return this.viewMode === 'split'; }
+  get editorVisible() { return this.viewMode !== 'preview'; }
+
+  _setViewMode(mode) {
+    if (!['split', 'edit', 'preview'].includes(mode)) return;
+    const changed = mode !== this.viewMode;
+    this.viewMode = mode;
+    if (changed) eventBus.emit('preview-visibility-changed', this.previewVisible);
+    eventBus.emit('view-mode-changed', mode);
   }
 
   connectedCallback() {
@@ -124,13 +142,20 @@ class AppShell extends LitElement {
         }
       },
       'toggle-preview': () => {
-        this.previewVisible = !this.previewVisible;
-        eventBus.emit('preview-visibility-changed', this.previewVisible);
+        const modes = ['split', 'edit', 'preview'];
+        const idx = modes.indexOf(this.viewMode);
+        this._setViewMode(modes[(idx + 1) % 3]);
+      },
+      'cycle-view-mode': () => {
+        const modes = ['split', 'edit', 'preview'];
+        const idx = modes.indexOf(this.viewMode);
+        this._setViewMode(modes[(idx + 1) % 3]);
+      },
+      'set-view-mode': (mode) => {
+        this._setViewMode(mode);
       },
       'preview-close': () => {
-        if (!this.previewVisible) return;
-        this.previewVisible = false;
-        eventBus.emit('preview-visibility-changed', false);
+        if (this.viewMode === 'split') this._setViewMode('edit');
       },
       'theme-changed': (theme) => { document.documentElement.setAttribute('data-theme', theme); },
       'language-changed': () => { this._updateTitle(); },
@@ -235,6 +260,9 @@ class AppShell extends LitElement {
         toggleGraph:     () => eventBus.emit('toggle-graph-view'),
         toggleTags:      () => eventBus.emit('toggle-tags-panel'),
         togglePreview:   () => eventBus.emit('toggle-preview'),
+        setViewSplit:    () => eventBus.emit('set-view-mode', 'split'),
+        setViewEdit:     () => eventBus.emit('set-view-mode', 'edit'),
+        setViewPreview:  () => eventBus.emit('set-view-mode', 'preview'),
         toggleSidebar:   () => eventBus.emit('toggle-sidebar'),
         togglePlugin:    () => eventBus.emit('toggle-plugin-manager'),
         toggleVimMode:   () => eventBus.emit('toggle-vim-mode'),
@@ -273,15 +301,22 @@ class AppShell extends LitElement {
           sidebar.style.minWidth = edConfig.sidebar_width + 'px';
         }
       }
+      // 记住默认视图模式（实际应用在 _restoreWorkspace 之后）
+      if (edConfig.default_view_mode && ['split', 'edit', 'preview'].includes(edConfig.default_view_mode)) {
+        this._defaultViewMode = edConfig.default_view_mode;
+      }
       // 恢复上次工作区
       const ws = await getCurrentWorkspace();
       if (ws) {
         eventBus.emit('workspace-opened', ws);
+      } else {
+        // 无工作区时应用默认视图模式
+        this._setViewMode(this._defaultViewMode);
       }
     } catch (_) {}
   }
 
-  /** ESC 优先级：设置 > 图谱 > 插件 > 侧面板 > 预览，返回 true 表示已处理 */
+  /** ESC 优先级：设置 > 图谱 > 插件 > 侧面板，返回 true 表示已处理 */
   _handleEsc() {
     const root = this.shadowRoot;
     // 1. 设置对话框
@@ -306,12 +341,6 @@ class AppShell extends LitElement {
     for (const [sel, evt] of panelToggles) {
       const el = root.querySelector(sel);
       if (el?.visible) { eventBus.emit(evt); return true; }
-    }
-    // 5. 预览
-    if (this.previewVisible) {
-      this.previewVisible = false;
-      eventBus.emit('preview-visibility-changed', false);
-      return true;
     }
     return false;
   }
@@ -359,6 +388,7 @@ class AppShell extends LitElement {
       active_file_path: serialized.activeFilePath,
       recent_files: existing.recent_files || [],
       export_history: existing.export_history || [],
+      view_mode: this.viewMode,
     });
   }
 
@@ -424,6 +454,13 @@ class AppShell extends LitElement {
         editorState.setActiveFile(fallbackPath);
         eventBus.emit('file-opened', { path: fallbackPath, content: file.content });
       }
+    }
+    // 恢复视图模式
+    const vm = wsState.view_mode;
+    if (vm && ['split', 'edit', 'preview'].includes(vm)) {
+      this._setViewMode(vm);
+    } else {
+      this._setViewMode(this._defaultViewMode);
     }
   }
 
@@ -554,8 +591,8 @@ class AppShell extends LitElement {
           <tab-bar></tab-bar>
           <div class="main-row">
             <div class="split-area">
-              <editor-pane class="editor-col"></editor-pane>
-              <div class="preview-col ${this.previewVisible ? '' : 'hidden'}">
+              <editor-pane class="editor-col ${this.editorVisible ? '' : 'hidden'}"></editor-pane>
+              <div class="preview-col ${this.viewMode === 'preview' ? 'full' : (this.viewMode === 'split' ? '' : 'hidden')}">
                 <preview-pane></preview-pane>
               </div>
             </div>

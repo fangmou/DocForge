@@ -47,6 +47,7 @@ pub struct AiConfig {
   language: String          // 界面语言 "zh" | "en"，默认 "zh"
   vim_mode: bool,           // Vim 模式，默认 false
   vim_escape_seq: String    // 插入模式退出序列，默认 "jk"
+  default_view_mode: String // 默认视图模式 "split"|"edit"|"preview"，默认 "split"
 }
 ```
 
@@ -345,7 +346,10 @@ AppConfig 中新增字段：
 | `toggleBacklinks` | `Alt+B` | 切换反向链接 |
 | `toggleGraph` | `Alt+G` | 切换知识图谱 |
 | `toggleTags` | `Alt+T` | 切换标签面板 |
-| `togglePreview` | `Alt+P` | 切换预览 |
+| `togglePreview` | `Alt+P` | 循环切换视图模式（split→edit→preview） |
+| `setViewSplit` | `Alt+Shift+1` | 分栏视图 |
+| `setViewEdit` | `Alt+Shift+2` | 编辑视图 |
+| `setViewPreview` | `Alt+Shift+3` | 预览视图 |
 | `toggleSidebar` | `` Alt+` `` | 切换侧栏 |
 | `togglePlugin` | `Alt+L` | 切换插件管理器 |
 | `exportHtml` | `Ctrl+Shift+E` | 导出 HTML |
@@ -488,6 +492,7 @@ pub struct WorkspaceState {
     pub active_file_path: String,
     pub recent_files: Vec<RecentFile>,
     pub export_history: Vec<ExportRecord>,
+    pub view_mode: String,        // "split"|"edit"|"preview"，空串=用全局默认
 }
 
 pub struct TabState {

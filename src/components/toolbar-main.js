@@ -17,6 +17,7 @@ const icons = {
   redo: svg`<path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 014-4h12"/>`,
   edit: svg`<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>`,
   eye: svg`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`,
+  columns: svg`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>`,
   wrap: svg`<path d="M3 6h18M3 12h15a3 3 0 110 6h-4m0 0l2-2m-2 2l2 2M3 18h7"/>`,
   search: svg`<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>`,
   list: svg`<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>`,
@@ -45,6 +46,7 @@ class ToolbarMain extends LitElement {
     _activePanel: { state: true },
     _theme: { state: true },
     _currentFormat: { state: true },
+    _viewMode: { state: true },
     _dropdown: { state: true }, // 'new' | 'edit' | 'markup' | 'search' | 'export' | ''
   };
 
@@ -183,6 +185,7 @@ class ToolbarMain extends LitElement {
     this._activePanel = '';
     this._theme = 'light';
     this._currentFormat = null;
+    this._viewMode = 'split';
     this._dropdown = '';
     this._langHandler = () => this.requestUpdate();
     this._clickOutside = (e) => {
@@ -212,6 +215,8 @@ class ToolbarMain extends LitElement {
     eventBus.on('theme-changed', this._themeHandler);
     this._formatHandler = (format) => { this._currentFormat = format; };
     eventBus.on('file-format-changed', this._formatHandler);
+    this._viewModeHandler = (mode) => { this._viewMode = mode || 'split'; };
+    eventBus.on('view-mode-changed', this._viewModeHandler);
     this._exportHtmlHandler = () => this._exportHtml();
     this._exportPdfHandler = () => this._exportPdf();
     this._exportDocxHandler = () => this._exportDocx();
@@ -232,6 +237,7 @@ class ToolbarMain extends LitElement {
     }
     if (this._themeHandler) eventBus.off('theme-changed', this._themeHandler);
     if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
+    if (this._viewModeHandler) eventBus.off('view-mode-changed', this._viewModeHandler);
     if (this._exportHtmlHandler) eventBus.off('export-html', this._exportHtmlHandler);
     if (this._exportPdfHandler) eventBus.off('export-pdf', this._exportPdfHandler);
     if (this._exportDocxHandler) eventBus.off('export-docx', this._exportDocxHandler);
@@ -319,7 +325,7 @@ class ToolbarMain extends LitElement {
 
       <!-- 视图切换 -->
       <button title="${t('toolbar.togglePreview')} (${shortcutRegistry.getShortcut('togglePreview')})"
-              @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon('eye')}</button>
+              @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon(this._viewMode === 'split' ? 'columns' : this._viewMode === 'edit' ? 'edit' : 'eye')}</button>
       <button title="${t('toolbar.toggleWordWrap')} (${shortcutRegistry.getShortcut('toggleWordWrap')})"
               @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
       <span class="sep"></span>

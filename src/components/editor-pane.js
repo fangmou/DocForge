@@ -585,6 +585,13 @@ class EditorPane extends LitElement {
       'goto-line': () => this._showGotoLine(),
       'open-external-file': (path) => this._openExternalFile(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
+      'view-mode-changed': (mode) => {
+        this._previewVisible = mode === 'split';
+        // 编辑器从隐藏恢复显示时刷新 CodeMirror
+        if (mode !== 'preview' && this._view) {
+          requestAnimationFrame(() => this._view.requestMeasure());
+        }
+      },
       'workspace-opened': () => { _adocFileCache = null; },
       'set-vim-mode': ({ enabled, escapeSeq }) => this._applyVimMode(enabled, escapeSeq),
       'toggle-vim-mode': () => this._toggleVimMode(),

@@ -189,7 +189,10 @@
   "shortcuts.toggleBacklinks": "Backlinks",
   "shortcuts.toggleGraph": "Knowledge Graph",
   "shortcuts.toggleTags": "Tags",
-  "shortcuts.togglePreview": "Toggle Preview",
+  "shortcuts.togglePreview": "Cycle View Mode",
+  "shortcuts.setViewSplit": "Split View",
+  "shortcuts.setViewEdit": "Edit View",
+  "shortcuts.setViewPreview": "Preview View",
   "shortcuts.toggleSidebar": "Toggle Sidebar",
   "shortcuts.togglePlugin": "Plugin Manager",
   "shortcuts.exportHtml": "Export HTML",
@@ -363,5 +366,14 @@
   "shortcuts.markupMono": "Monospace",
   "shortcuts.markupLink": "Insert Link",
   "shortcuts.alignTable": "Align Table",
-  "shortcuts.toggleVimMode": "Toggle Vim Mode"
+  "shortcuts.toggleVimMode": "Toggle Vim Mode",
+
+  "statusBar.viewSplit": "Split",
+  "statusBar.viewEdit": "Edit",
+  "statusBar.viewPreview": "Preview",
+
+  "settings.editor.defaultViewMode": "Default View Mode",
+  "settings.editor.defaultViewModeSplit": "Split (Edit + Preview)",
+  "settings.editor.defaultViewModeEdit": "Edit Only",
+  "settings.editor.defaultViewModePreview": "Preview Only"
 }

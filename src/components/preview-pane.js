@@ -174,6 +174,7 @@ class PreviewPane extends LitElement {
     this._debounceTimer = null;
     this._ignoreScroll = false;
     this._visible = true;
+    this._viewMode = 'split';
     this._currentFormat = null;
   }
 
@@ -198,6 +199,13 @@ class PreviewPane extends LitElement {
     this.addEventListener('scroll', this._scrollHandler, { passive: true });
     this._visHandler = (v) => { this._visible = v; };
     eventBus.on('preview-visibility-changed', this._visHandler);
+    this._viewModeHandler = (mode) => {
+      this._viewMode = mode;
+      this._visible = mode === 'split';
+      // 从 edit 模式切回 split/preview 时重新渲染
+      if (mode !== 'edit' && this._lastContent) this._render(this._lastContent);
+    };
+    eventBus.on('view-mode-changed', this._viewModeHandler);
     this._formatHandler = (format) => {
       this._currentFormat = format;
       if (this._lastContent) this._render(this._lastContent);
@@ -216,6 +224,7 @@ class PreviewPane extends LitElement {
     setPreviewSync(null);
     if (this._scrollHandler) this.removeEventListener('scroll', this._scrollHandler);
     if (this._visHandler) eventBus.off('preview-visibility-changed', this._visHandler);
+    if (this._viewModeHandler) eventBus.off('view-mode-changed', this._viewModeHandler);
     if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
     clearTimeout(this._debounceTimer);
   }
@@ -223,6 +232,8 @@ class PreviewPane extends LitElement {
   _render(content) {
     this._lastContent = content;
     clearTimeout(this._debounceTimer);
+    // edit 模式下跳过渲染（节省 CPU）
+    if (this._viewMode === 'edit') return;
     this._debounceTimer = setTimeout(async () => {
       const isMd = this._currentFormat?.id === 'md';
       try {

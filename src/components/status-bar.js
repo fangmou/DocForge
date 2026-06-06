@@ -41,6 +41,7 @@ class StatusBar extends LitElement {
     backlinkCount: { type: Number },
     tagCount: { type: Number },
     vimMode: { type: String },
+    viewMode: { type: String },
   };
 
   /** @type {string|null} 导出路径，供点击打开 */
@@ -130,6 +131,19 @@ class StatusBar extends LitElement {
       font-weight: 600;
       letter-spacing: 0.5px;
     }
+    .view-mode-btn {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 1px 8px;
+      border-radius: 3px;
+      background: var(--bg-3);
+      color: var(--accent);
+      transition: background 0.15s;
+    }
+    .view-mode-btn:hover {
+      background: var(--accent);
+      color: #fff;
+    }
     .msg-reveal-btn svg {
       width: 12px;
       height: 12px;
@@ -150,6 +164,7 @@ class StatusBar extends LitElement {
     this.backlinkCount = 0;
     this.tagCount = 0;
     this.vimMode = '';
+    this.viewMode = 'split';
     this._msgTimer = null;
     this._blSeq = 0;
   }
@@ -195,6 +210,8 @@ class StatusBar extends LitElement {
     eventBus.on('file-saved', this._fileSavedHandler);
     this._vimModeHandler = (mode) => { this.vimMode = mode || ''; };
     eventBus.on('vim-mode-changed', this._vimModeHandler);
+    this._viewModeHandler = (mode) => { this.viewMode = mode || 'split'; };
+    eventBus.on('view-mode-changed', this._viewModeHandler);
   }
 
   disconnectedCallback() {
@@ -206,6 +223,7 @@ class StatusBar extends LitElement {
     if (this._fileOpenedHandler) eventBus.off('file-opened', this._fileOpenedHandler);
     if (this._fileSavedHandler) eventBus.off('file-saved', this._fileSavedHandler);
     if (this._vimModeHandler) eventBus.off('vim-mode-changed', this._vimModeHandler);
+    if (this._viewModeHandler) eventBus.off('view-mode-changed', this._viewModeHandler);
     clearTimeout(this._msgTimer);
     this._exportPath = null;
   }
@@ -249,9 +267,12 @@ class StatusBar extends LitElement {
   }
 
   render() {
+    const isPreview = this.viewMode === 'preview';
+    const viewModeKey = { split: 'statusBar.viewSplit', edit: 'statusBar.viewEdit', preview: 'statusBar.viewPreview' }[this.viewMode] || 'statusBar.viewSplit';
     return html`
       <div class="left">
-        ${this.vimMode ? html`<span class="vim-mode-indicator">-- ${this._vimModeLabel(this.vimMode)} --</span>` : ''}
+        <span class="view-mode-btn" @click=${() => eventBus.emit('toggle-preview')}>${t(viewModeKey)}</span>
+        ${!isPreview && this.vimMode ? html`<span class="vim-mode-indicator">-- ${this._vimModeLabel(this.vimMode)} --</span>` : ''}
         ${this.filePath ? html`
           <span class="indicator ${this.isDirty ? 'dirty' : ''}"></span>
         ` : ''}
@@ -264,8 +285,10 @@ class StatusBar extends LitElement {
       </div>
       <div class="spacer"></div>
       <div class="right">
-        <span>${t('statusBar.lineCol', { line: this.line, col: this.col })}</span>
-        <span class="sep">|</span>
+        ${!isPreview ? html`
+          <span>${t('statusBar.lineCol', { line: this.line, col: this.col })}</span>
+          <span class="sep">|</span>
+        ` : ''}
         <span>${this.encoding}</span>
         <span class="sep">|</span>
         <span class="format-label">${this.fileType}</span>
