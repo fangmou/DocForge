@@ -1,12 +1,13 @@
 import { LitElement, css } from 'lit';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, ViewPlugin, Decoration } from '@codemirror/view';
 import { EditorState, Compartment, RangeSetBuilder, Transaction } from '@codemirror/state';
-import { history, indentWithTab, undo, redo, standardKeymap, selectAll, moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, indentMore, indentLess, indentSelection, cursorMatchingBracket, insertBlankLine, addCursorAbove, addCursorBelow, selectLine, selectParentSyntax } from '@codemirror/commands';
+import { history, indentWithTab, undo, redo, standardKeymap, selectAll, moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, indentMore, indentLess, indentSelection, cursorMatchingBracket, insertBlankLine, addCursorAbove, addCursorBelow, selectLine, selectParentSyntax, cursorPageUp, cursorPageDown } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { StreamLanguage } from '@codemirror/language';
+import { vim, Vim, getCM } from '@replit/codemirror-vim';
 import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { writeFile, pickSaveFile, readFile, getFileMtime, deleteFile } from '../services/file-service.js';
@@ -439,6 +440,7 @@ async function asciidocCompletions(context) {
 const themeCompartment = new Compartment();
 const wrapCompartment = new Compartment();
 const keymapCompartment = new Compartment();
+const vimCompartment = new Compartment();
 const languageCompartment = new Compartment();
 const completionCompartment = new Compartment();
 
@@ -498,6 +500,21 @@ class EditorPane extends LitElement {
     .goto-line-overlay input::placeholder {
       color: var(--text-3);
     }
+    /* Vim Ex 命令面板 */
+    .cm-editor .cm-vim-panel {
+      background: var(--bg-3);
+      border-top: 2px solid var(--color-primary);
+      padding: 4px 12px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-1);
+    }
+    .cm-editor .cm-vim-panel input {
+      color: var(--text-1);
+      caret-color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
   `;
 
   constructor() {
@@ -516,6 +533,9 @@ class EditorPane extends LitElement {
     this._previewVisible = true;
     this._lastScrollTop = 0;
     this._lastSwitchedFormat = null;
+    this._vimEnabled = false;
+    this._lastVimMode = '';
+    this._vimModeChangeHandler = null;
   }
 
   connectedCallback() {
@@ -566,6 +586,8 @@ class EditorPane extends LitElement {
       'open-external-file': (path) => this._openExternalFile(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
       'workspace-opened': () => { _adocFileCache = null; },
+      'set-vim-mode': ({ enabled, escapeSeq }) => this._applyVimMode(enabled, escapeSeq),
+      'toggle-vim-mode': () => this._toggleVimMode(),
       'file-saved': () => { _adocFileCache = null; },
       'restore-editor-state': ({ scrollTop, cursorPos }) => {
         if (!this._view) return;
@@ -610,6 +632,10 @@ class EditorPane extends LitElement {
     setEditorSync(null);
     if (this._beforeUnload) window.removeEventListener('beforeunload', this._beforeUnload);
     clearTimeout(this._autoSaveTimer);
+    if (this._vimModeChangeHandler && this._view) {
+      const cm = getCM(this._view);
+      if (cm) cm.off('vim-mode-change', this._vimModeChangeHandler);
+    }
     this._view?.destroy();
   }
 
@@ -636,6 +662,9 @@ class EditorPane extends LitElement {
           search(),
           includeLinkPlugin,
           wrapCompartment.of([]),
+          vimCompartment.of([]),
+          // 自定义快捷键（放在标准 keymap 之前，可覆盖标准绑定）
+          keymapCompartment.of(keymap.of([])),
           keymap.of([
             ...standardKeymap,
             ...searchKeymap.filter(b => b.key !== 'Mod-g'),
@@ -643,8 +672,6 @@ class EditorPane extends LitElement {
             ...completionKeymap,
             indentWithTab,
           ]),
-          // 自定义快捷键（通过 Compartment 动态更新，_loadConfig 中实际注册）
-          keymapCompartment.of(keymap.of([])),
           languageCompartment.of(StreamLanguage.define(asciidocSyntax())),
           syntaxHighlighting(defaultHighlightStyle),
           themeCompartment.of([]),
@@ -717,6 +744,7 @@ class EditorPane extends LitElement {
       this._setFontSize(config.font_size);
       if (config.word_wrap) this._toggleWrap();
       if (config.auto_save_interval > 0) this._autoSaveDelay = config.auto_save_interval * 1000;
+      if (config.vim_mode) this._applyVimMode(true, config.vim_escape_seq || 'jk');
     } catch (e) { /* 使用默认值 */ }
     // 从快捷键注册中心加载自定义快捷键
     try {
@@ -727,6 +755,7 @@ class EditorPane extends LitElement {
 
   _applyShortcutKeymap(sr) {
     if (!this._view) return;
+    const boldKey = sr.getCmKey('markupBold') || 'Mod-b';
     const bindings = [
       { key: sr.getCmKey('undo') || 'Mod-z',         run: () => { if (this._view) undo(this._view); return true; } },
       { key: sr.getCmKey('redo') || 'Mod-Shift-z',   run: () => { if (this._view) redo(this._view); return true; } },
@@ -739,16 +768,104 @@ class EditorPane extends LitElement {
       // 注释快捷键
       { key: sr.getCmKey('toggleLineComment') || 'Mod-/', run: () => { this._toggleComment(); return true; } },
       { key: sr.getCmKey('toggleBlockComment') || 'Mod-Shift-/', run: () => { this._toggleBlockComment(); return true; } },
-      // 标记快捷键
-      { key: sr.getCmKey('markupBold') || 'Mod-b',   run: () => { this._wrapInlineMarkup('bold'); return true; } },
+      // 标记快捷键（vim 模式下 Ctrl-B 改为翻页，不绑定粗体）
+      ...(this._vimEnabled ? [] : [{ key: boldKey, run: () => { this._wrapInlineMarkup('bold'); return true; } }]),
       { key: sr.getCmKey('markupItalic') || 'Mod-i', run: () => { this._wrapInlineMarkup('italic'); return true; } },
       { key: sr.getCmKey('markupMono') || 'Mod-Shift-`', run: () => { this._wrapInlineMarkup('mono'); return true; } },
       { key: sr.getCmKey('markupLink') || 'Mod-k',   run: () => { this._insertLink(); return true; } },
       { key: sr.getCmKey('alignTable') || 'Alt-Shift-t', run: () => { this._alignTable(); return true; } },
+      // vim 模式下 Ctrl-F/Ctrl-B 在插入模式做翻页（普通模式由 vim 自身处理）
+      ...(this._vimEnabled ? [
+        { key: 'Mod-f', run: () => { if (this._view) cursorPageDown(this._view); return true; } },
+        { key: 'Mod-b', run: () => { if (this._view) cursorPageUp(this._view); return true; } },
+      ] : []),
     ].filter(b => b.key);
     this._view.dispatch({
       effects: keymapCompartment.reconfigure(keymap.of(bindings)),
     });
+  }
+
+  // ─── Vim 模式 ───
+
+  async _toggleVimMode() {
+    const newState = !this._vimEnabled;
+    this._applyVimMode(newState, this._vimEscapeSeq || 'jk');
+    // 持久化到配置
+    try {
+      const { saveEditorConfig, loadEditorConfig } = await import('../services/config-service.js');
+      const ed = await loadEditorConfig();
+      ed.vim_mode = newState;
+      ed.vim_escape_seq = this._vimEscapeSeq || 'jk';
+      await saveEditorConfig(ed);
+    } catch { /* ignore */ }
+  }
+
+  _applyVimMode(enabled, escapeSeq = 'jk') {
+    if (!this._view) return;
+    this._vimEnabled = enabled;
+    if (enabled) {
+      // 清除旧的插入模式映射，注册新的
+      if (this._vimEscapeSeq && this._vimEscapeSeq.length >= 2) {
+        Vim.unmap(this._vimEscapeSeq, 'insert');
+      }
+      this._vimEscapeSeq = escapeSeq;
+      if (escapeSeq && escapeSeq.length >= 2) {
+        Vim.map(escapeSeq, '<Esc>', 'insert');
+      }
+      // 注册 Ex 命令（全局注册，幂等）
+      Vim.defineEx('w', 'w', (cm) => this._saveFile());
+      Vim.defineEx('q', 'q', () => eventBus.emit('close-active-tab'));
+      // 激活 vim 扩展
+      // 不使用 status: true — 因为 CM6 panel 系统在 compartment reconfigure 时
+      // 先于 vimPlugin constructor 执行，此时 view.cm 不存在，statusPanel 会失败。
+      // 改用默认模式：dialog 需要时通过 showVimPanel effect 动态创建 panel。
+      this._view.dispatch({
+        effects: vimCompartment.reconfigure(vim()),
+      });
+      // 立即通知初始模式
+      this._lastVimMode = 'normal';
+      eventBus.emit('vim-mode-changed', 'normal');
+      // 通过 CodeMirror 内部事件系统监听模式变化
+      const cm = getCM(this._view);
+      if (cm && !this._vimModeChangeHandler) {
+        this._vimModeChangeHandler = (e) => {
+          if (!this._vimEnabled) return;
+          const mode = e.mode || '';
+          if (mode !== this._lastVimMode) {
+            this._lastVimMode = mode;
+            eventBus.emit('vim-mode-changed', mode);
+          }
+        };
+        cm.on('vim-mode-change', this._vimModeChangeHandler);
+        // 启动时立即通知当前模式
+        const vimState = cm.state?.vim;
+        if (vimState?.mode) {
+          this._lastVimMode = vimState.mode;
+          eventBus.emit('vim-mode-changed', vimState.mode);
+        }
+      }
+    } else {
+      // 清除插入模式映射
+      if (this._vimEscapeSeq && this._vimEscapeSeq.length >= 2) {
+        Vim.unmap(this._vimEscapeSeq, 'insert');
+      }
+      this._vimEscapeSeq = null;
+      // 移除模式监听
+      if (this._vimModeChangeHandler) {
+        const cm = getCM(this._view);
+        if (cm) cm.off('vim-mode-change', this._vimModeChangeHandler);
+        this._vimModeChangeHandler = null;
+      }
+      this._view.dispatch({
+        effects: vimCompartment.reconfigure([]),
+      });
+      this._lastVimMode = '';
+      eventBus.emit('vim-mode-changed', '');
+    }
+    // vim 状态变更后刷新自定义快捷键（Ctrl-B/Ctrl-F 绑定取决于 vim 开关）
+    import('../services/shortcut-registry.js').then(({ shortcutRegistry }) => {
+      this._applyShortcutKeymap(shortcutRegistry);
+    }).catch(() => {});
   }
 
   // ─── 格式感知的标记操作辅助方法 ───

@@ -126,6 +126,10 @@
   "settings.editor.tabSize": "Tab Size",
   "settings.editor.autoSave": "Auto-save interval (seconds, 0 to disable)",
   "settings.editor.wordWrap": "Word Wrap",
+  "settings.editor.vimMode": "Vim Mode",
+  "settings.editor.vimModeHint": "Enable Vim keybindings. ESC or escape sequence to return to normal mode",
+  "settings.editor.vimEscapeSeq": "Insert mode escape sequence",
+  "settings.editor.vimEscapeSeqHint": "e.g. jk, jj, kj. Leave empty to use ESC only",
 
   "settings.appearance.theme": "Theme",
   "settings.appearance.themeLight": "Light",
@@ -358,5 +362,6 @@
   "shortcuts.markupItalic": "Italic",
   "shortcuts.markupMono": "Monospace",
   "shortcuts.markupLink": "Insert Link",
-  "shortcuts.alignTable": "Align Table"
+  "shortcuts.alignTable": "Align Table",
+  "shortcuts.toggleVimMode": "Toggle Vim Mode"
 }

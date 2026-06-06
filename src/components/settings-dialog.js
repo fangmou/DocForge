@@ -32,6 +32,8 @@ class SettingsDialog extends LitElement {
     tabSize: { type: Number },
     wordWrap: { type: Boolean },
     autoSaveInterval: { type: Number },
+    vimMode: { type: Boolean },
+    vimEscapeSeq: { type: String },
     // 导出通用
     outputDir: { type: String },
     outputNaming: { type: String },
@@ -511,6 +513,8 @@ class SettingsDialog extends LitElement {
     this.tabSize = 4;
     this.wordWrap = false;
     this.autoSaveInterval = 3;
+    this.vimMode = false;
+    this.vimEscapeSeq = 'jk';
     // 导出通用
     this.outputDir = '';
     this.outputNaming = 'title';
@@ -594,6 +598,8 @@ class SettingsDialog extends LitElement {
       this.wordWrap = ed.word_wrap || false;
       this.autoSaveInterval = ed.auto_save_interval ?? 3;
       this.language = ed.language || 'zh';
+      this.vimMode = ed.vim_mode || false;
+      this.vimEscapeSeq = ed.vim_escape_seq || 'jk';
     }
 
     // 导出通用配置 + pandoc
@@ -691,9 +697,12 @@ class SettingsDialog extends LitElement {
         word_wrap: this.wordWrap,
         auto_save_interval: this.autoSaveInterval,
         language: this.language,
+        vim_mode: this.vimMode,
+        vim_escape_seq: this.vimEscapeSeq,
       });
       eventBus.emit('font-size-set', this.fontSize);
       eventBus.emit('set-word-wrap', this.wordWrap);
+      eventBus.emit('set-vim-mode', { enabled: this.vimMode, escapeSeq: this.vimEscapeSeq });
       if (this.language !== getLanguage()) {
         await setLanguage(this.language);
         eventBus.emit('language-changed', this.language);
@@ -1023,6 +1032,20 @@ class SettingsDialog extends LitElement {
           ${t('settings.editor.wordWrap')}
         </label>
       </div>
+      <div class="field">
+        <label class="checkbox-label">
+          <input type="checkbox" .checked=${this.vimMode} @change=${(e) => this.vimMode = e.target.checked} />
+          ${t('settings.editor.vimMode')}
+        </label>
+        <div class="hint">${t('settings.editor.vimModeHint')}</div>
+      </div>
+      ${this.vimMode ? html`
+      <div class="field">
+        <label>${t('settings.editor.vimEscapeSeq')}</label>
+        <input type="text" maxlength="4" .value=${this.vimEscapeSeq} @input=${(e) => this.vimEscapeSeq = e.target.value} placeholder="jk" />
+        <div class="hint">${t('settings.editor.vimEscapeSeqHint')}</div>
+      </div>
+      ` : ''}
     `;
   }
 

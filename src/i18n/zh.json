@@ -126,6 +126,10 @@
   "settings.editor.tabSize": "Tab 宽度",
   "settings.editor.autoSave": "自动保存间隔（秒，0 禁用）",
   "settings.editor.wordWrap": "自动换行",
+  "settings.editor.vimMode": "Vim 模式",
+  "settings.editor.vimModeHint": "启用 Vim 键绑定。ESC 或退出序列回到普通模式",
+  "settings.editor.vimEscapeSeq": "退出插入模式序列",
+  "settings.editor.vimEscapeSeqHint": "如 jk、jj、kj 等，留空仅用 ESC",
 
   "settings.appearance.theme": "主题",
   "settings.appearance.themeLight": "浅色",
@@ -358,5 +362,6 @@
   "shortcuts.markupItalic": "斜体",
   "shortcuts.markupMono": "等宽",
   "shortcuts.markupLink": "插入链接",
-  "shortcuts.alignTable": "对齐表格"
+  "shortcuts.alignTable": "对齐表格",
+  "shortcuts.toggleVimMode": "切换 Vim 模式"
 }

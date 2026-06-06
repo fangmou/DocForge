@@ -237,6 +237,7 @@ class AppShell extends LitElement {
         togglePreview:   () => eventBus.emit('toggle-preview'),
         toggleSidebar:   () => eventBus.emit('toggle-sidebar'),
         togglePlugin:    () => eventBus.emit('toggle-plugin-manager'),
+        toggleVimMode:   () => eventBus.emit('toggle-vim-mode'),
         exportHtml:      () => eventBus.emit('export-html'),
         exportPdf:       () => eventBus.emit('export-pdf'),
         exportDocx:      () => eventBus.emit('export-docx'),

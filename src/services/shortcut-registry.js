@@ -55,6 +55,7 @@ const DEFAULTS = {
   togglePreview:    { default: 'Alt+P',          labelKey: 'shortcuts.togglePreview' },
   toggleSidebar:    { default: 'Alt+1',          labelKey: 'shortcuts.toggleSidebar' },
   togglePlugin:     { default: 'Alt+L',          labelKey: 'shortcuts.togglePlugin' },
+  toggleVimMode:    { default: 'Alt+V',          labelKey: 'shortcuts.toggleVimMode' },
   exportHtml:       { default: 'Ctrl+Shift+E',   labelKey: 'shortcuts.exportHtml' },
   exportPdf:        { default: 'Ctrl+Shift+P',   labelKey: 'shortcuts.exportPdf' },
   exportDocx:       { default: 'Ctrl+Shift+D',   labelKey: 'shortcuts.exportDocx' },

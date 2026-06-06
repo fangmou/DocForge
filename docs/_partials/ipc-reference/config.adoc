@@ -45,10 +45,14 @@ pub struct AiConfig {
   word_wrap: bool,          // 自动换行，默认 false
   auto_save_interval: u32   // 自动保存间隔(ms)，默认 3000
   language: String          // 界面语言 "zh" | "en"，默认 "zh"
+  vim_mode: bool,           // Vim 模式，默认 false
+  vim_escape_seq: String    // 插入模式退出序列，默认 "jk"
 }
 ```
 
 *language 说明*: 控制界面语言和 Asciidoctor 渲染参数。中文时自动注入 `toc-title=目录`、`table-caption=表`、`figure-caption=图`、`example-caption=例`、`lang=zh_CN`。语言包文件位于 `src/i18n/{lang}.json`，新增语言只需添加 JSON 文件。
+
+*vim_mode 说明*: 启用 CodeMirror Vim 键绑定（`@replit/codemirror-vim`）。启用后状态栏显示当前模式（NORMAL/INSERT/VISUAL 等），支持 `:w` 保存、`:q` 关闭标签页等 Ex 命令。通过 `vimCompartment` 动态切换，无需重建编辑器。`vim_escape_seq` 配置插入模式退出序列（如 `jk`、`jj`），相当于 `:inoremap {seq} <Esc>`，留空则仅用 ESC。
 
 [[load-editor-config]]
 === load_editor_config

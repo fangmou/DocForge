@@ -40,6 +40,7 @@ class StatusBar extends LitElement {
     message: { type: String },
     backlinkCount: { type: Number },
     tagCount: { type: Number },
+    vimMode: { type: String },
   };
 
   /** @type {string|null} 导出路径，供点击打开 */
@@ -124,6 +125,11 @@ class StatusBar extends LitElement {
     .msg-reveal-btn:hover {
       color: var(--accent);
     }
+    .vim-mode-indicator {
+      color: var(--color-success);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
     .msg-reveal-btn svg {
       width: 12px;
       height: 12px;
@@ -143,6 +149,7 @@ class StatusBar extends LitElement {
     this.message = '';
     this.backlinkCount = 0;
     this.tagCount = 0;
+    this.vimMode = '';
     this._msgTimer = null;
     this._blSeq = 0;
   }
@@ -186,6 +193,8 @@ class StatusBar extends LitElement {
     eventBus.on('file-opened', this._fileOpenedHandler);
     this._fileSavedHandler = () => this._loadBacklinks();
     eventBus.on('file-saved', this._fileSavedHandler);
+    this._vimModeHandler = (mode) => { this.vimMode = mode || ''; };
+    eventBus.on('vim-mode-changed', this._vimModeHandler);
   }
 
   disconnectedCallback() {
@@ -196,6 +205,7 @@ class StatusBar extends LitElement {
     if (this._langHandler) eventBus.off('language-changed', this._langHandler);
     if (this._fileOpenedHandler) eventBus.off('file-opened', this._fileOpenedHandler);
     if (this._fileSavedHandler) eventBus.off('file-saved', this._fileSavedHandler);
+    if (this._vimModeHandler) eventBus.off('vim-mode-changed', this._vimModeHandler);
     clearTimeout(this._msgTimer);
     this._exportPath = null;
   }
@@ -241,6 +251,7 @@ class StatusBar extends LitElement {
   render() {
     return html`
       <div class="left">
+        ${this.vimMode ? html`<span class="vim-mode-indicator">-- ${this._vimModeLabel(this.vimMode)} --</span>` : ''}
         ${this.filePath ? html`
           <span class="indicator ${this.isDirty ? 'dirty' : ''}"></span>
         ` : ''}
@@ -313,6 +324,20 @@ class StatusBar extends LitElement {
     } catch (e) {
       console.error('打开目录失败:', e);
     }
+  }
+
+  /** vim 模式名称映射 */
+  _vimModeLabel(mode) {
+    const labels = {
+      normal: 'NORMAL',
+      insert: 'INSERT',
+      visual: 'VISUAL',
+      'visual-line': 'VISUAL LINE',
+      'visual-block': 'VISUAL BLOCK',
+      replace: 'REPLACE',
+      operator: 'OPERATOR',
+    };
+    return labels[mode] || mode.toUpperCase();
   }
 }
 

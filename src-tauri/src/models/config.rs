@@ -33,6 +33,8 @@ pub struct EditorConfig {
     pub auto_save_interval: u32,
     pub language: String,
     pub sidebar_width: u32,
+    pub vim_mode: bool,
+    pub vim_escape_seq: String,
 }
 
 impl Default for EditorConfig {
@@ -45,6 +47,8 @@ impl Default for EditorConfig {
             auto_save_interval: 3,
             language: "zh".into(),
             sidebar_width: 240,
+            vim_mode: false,
+            vim_escape_seq: "jk".into(),
         }
     }
 }
