@@ -1,18 +1,83 @@
 # 003 — 应用图标生成流程
 
-## 源文件
+## 生成目标一览
+
+| 输出文件 | 尺寸 | 用途 |
+|---|---|---|
+| `src-tauri/icons/128x128.png` | 128×128 | Tauri 标准/Linux 桌面图标 |
+| `src-tauri/icons/128x128@2x.png` | 256×256 | Rust 端窗口图标（标题栏+任务栏） |
+| `src-tauri/icons/icon.ico` | 16~256 | Windows 可执行文件图标 |
+| `src-tauri/icons/icon.icns` | 16~512 | macOS 应用图标 |
+
+## 方式 A：PNG 源（推荐）
+
+### 依赖
+
+```
+pip install Pillow
+apt install icoutils   # 提供 icotool（ICO 构建必须）
+```
+
+### 一键生成
+
+将 `SOURCE` 改为你的 PNG 文件路径（推荐 ≥512×512，透明背景 RGBA），在项目根目录运行：
+
+```bash
+python3 << 'EOF'
+from PIL import Image
+import subprocess, os
+
+# ===== 改这一行即可 =====
+SOURCE = "你的图标.png"
+# ========================
+
+OUT   = "src-tauri/icons"
+TMP   = "/tmp/ico_build"
+os.makedirs(TMP, exist_ok=True)
+
+img = Image.open(SOURCE).convert("RGBA")
+print(f"源图: {img.size}")
+
+def resize(size):
+    return img.resize((size, size), Image.LANCZOS)
+
+# --- PNG 各尺寸 ---
+resize(128).save(f"{OUT}/128x128.png")
+resize(256).save(f"{OUT}/128x128@2x.png")
+print("PNG ✓")
+
+# --- ICO (Windows) — 必须用 icotool ---
+ICO_SIZES = [16, 24, 32, 48, 256]
+for s in ICO_SIZES:
+    resize(s).save(f"{TMP}/{s}.png")
+subprocess.run(["icotool", "-c", "-o", f"{OUT}/icon.ico",
+    *[f"{TMP}/{s}.png" for s in ICO_SIZES]], check=True)
+print("ICO ✓")
+
+# --- ICNS (macOS) ---
+resize(512).save(f"{OUT}/icon.icns", format="ICNS",
+    sizes=[(16,16), (32,32), (128,128), (256,256), (512,512)])
+print("ICNS ✓")
+
+print("\n全部完成！运行 make dev 查看效果。")
+EOF
+```
+
+## 方式 B：SVG 源
+
+### 源文件
 
 - SVG 源：`src/assets/logo.svg`（透明背景，512×512 viewBox）
 - 替换时直接覆盖此文件
 
-## 依赖
+### 依赖
 
 ```
 pip install cairosvg Pillow
 apt install icoutils   # 提供 icotool
 ```
 
-## 一键生成
+### 一键生成
 
 ```bash
 python3 << 'EOF'
@@ -30,8 +95,8 @@ def render(size):
     img = Image.open(io.BytesIO(data)).convert('RGBA')
     return img.resize((size, size), Image.LANCZOS)
 
-# PNG 各尺寸（Tauri bundle 引用）
-for t in [32, 128, 256]:
+# PNG 各尺寸（Tauri bundle 引用 + Rust 窗口图标）
+for t in [128, 256]:
     render(t).save(f'{OUT}/{t}x{t}.png')
 render(256).save(f'{OUT}/128x128@2x.png')  # Retina = 256
 
@@ -42,8 +107,9 @@ for s in ICO_SIZES:
 subprocess.run(['icotool', '-c', '-o', f'{OUT}/icon.ico',
     *[f'{TMP}/{s}.png' for s in ICO_SIZES]], check=True)
 
-# ICNS (macOS) — 暂用 256 PNG 占位，正式打包时需 apple iconutil 转换
-render(256).save(f'{OUT}/icon.icns')
+# ICNS (macOS)
+render(512).save(f'{OUT}/icon.icns', format='ICNS',
+    sizes=[(16,16), (32,32), (128,128), (256,256), (512,512)])
 
 print('Done')
 EOF
@@ -67,5 +133,6 @@ make windows
    `windres` 编译后 exe 内图标组完全乱序，Windows 显示默认蓝框。必须用 `icotool` 构建。
 2. **PNG 压缩 ICO 不可用**：`windres`（MinGW cross-compile）不支持 PNG 压缩的 ICO entry，
    编译后图标组数据同样损坏。`icotool` 默认输出 BMP DIB 格式，兼容性最好。
-3. **标题栏模糊**：Windows 125%/150% 缩放需要 20/24px 图标。若只有 16 和 32，
-   系统会拉伸导致模糊。ICO 中已包含 24×24 尺寸。
+3. **窗口图标模糊**：Tauri v2 默认从 `bundle.icon` 取最小 PNG（原为 32×32）做窗口图标，
+   在高 DPI 下模糊。已改为 Rust 端用 `include_bytes!` 加载 256×256 PNG（`128x128@2x.png`）
+   并通过 `window.set_icon()` 设置。

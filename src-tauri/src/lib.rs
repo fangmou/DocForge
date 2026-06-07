@@ -11,6 +11,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // 设置高分辨率窗口图标（标题栏 + 任务栏）
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/128x128@2x.png");
+                if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
+                    let _ = window.set_icon(icon);
+                }
+            }
             // 从磁盘加载持久化配置
             let config = commands::config::load_config_from_disk(app.handle());
             app.manage(std::sync::Mutex::new(config));

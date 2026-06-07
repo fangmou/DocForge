@@ -1,31 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Ultra-vibrant modern forge gradient -->
-    <linearGradient id="primaryOrange" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FF4500" />
-      <stop offset="100%" stop-color="#FFA500" />
+    <!-- 中括号颜色 -->
+    <linearGradient id="bracketGreen" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#006600" />
+      <stop offset="100%" stop-color="#008800" />
+    </linearGradient>
+    
+    <!-- 井号横线颜色 - 现在使用橙色系 -->
+    <linearGradient id="hashHorizontal" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF9800" />
+      <stop offset="100%" stop-color="#FFB74D" />
+    </linearGradient>
+    
+    <!-- 井号竖线颜色 - 现在使用蓝色系 -->
+    <linearGradient id="hashVertical" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1565C0" />
+      <stop offset="100%" stop-color="#1976D2" />
     </linearGradient>
   </defs>
-
-  <!-- Extremely bold, chunky geometric shapes. 
-       No thin lines, no dash arrays, no tiny nodes.
-       Designed for maximum high-contrast visibility at 16x16, 32x32 up to 1024x1024. -->
-  <g>
-    <!-- 1. Top Diamond (Solid, thick floating node) -->
-    <polygon 
-      points="256,70 380,140 256,210 132,140" 
-      fill="url(#primaryOrange)" 
-    />
-    
-    <!-- 2. Bottom Anvil Base (Heavy, thick solid foundation) -->
-    <path 
-      d="M 132 300 
-         L 256 230 
-         L 380 300 
-         L 330 390 
-         H 182 
-         Z" 
-      fill="url(#primaryOrange)" 
-    />
-  </g>
+  
+  <!-- 左侧中括号 -->
+  <rect x="80" y="120" width="20" height="272" rx="6" ry="6" fill="url(#bracketGreen)" />
+  <rect x="80" y="120" width="60" height="20" rx="6" ry="6" fill="url(#bracketGreen)" />
+  <rect x="80" y="372" width="60" height="20" rx="6" ry="6" fill="url(#bracketGreen)" />
+  
+  <!-- 井号主体 -->
+  <!-- 垂直条 - 先绘制，现在使用蓝色系 -->
+  <rect x="180" y="110" width="45" height="152" rx="8" ry="8" fill="url(#hashVertical)" />
+  <rect x="287" y="110" width="45" height="152" rx="8" ry="8" fill="url(#hashVertical)" />
+  <rect x="180" y="240" width="45" height="152" rx="8" ry="8" fill="url(#hashVertical)" />
+  <rect x="287" y="240" width="45" height="152" rx="8" ry="8" fill="url(#hashVertical)" />
+  
+  <!-- 水平条 - 后绘制（在竖线之上），现在使用橙色系 -->
+  <rect x="160" y="170" width="192" height="45" rx="8" ry="8" fill="url(#hashHorizontal)" />
+  <rect x="160" y="297" width="192" height="45" rx="8" ry="8" fill="url(#hashHorizontal)" />
+  
+  <!-- 右侧中括号 -->
+  <rect x="412" y="120" width="20" height="272" rx="6" ry="6" fill="url(#bracketGreen)" />
+  <rect x="372" y="120" width="60" height="20" rx="6" ry="6" fill="url(#bracketGreen)" />
+  <rect x="372" y="372" width="60" height="20" rx="6" ry="6" fill="url(#bracketGreen)" />
 </svg>
