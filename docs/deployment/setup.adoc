@@ -36,11 +36,66 @@ make mac            # macOS（需 macOS 主机）
 ----
 make pkg            # 当前平台安装包
 make pkg-linux      # Linux .deb/.AppImage
-make pkg-windows    # Windows .msi
+make pkg-windows    # （仅提示）Windows 包需在 Windows 原生环境打，见下节
 make pkg-mac        # macOS .dmg（需 macOS 主机）
 ----
 
 产物在 `src-tauri/target/<平台>/release/bundle/` 下。
+
+==== Windows 安装包（Windows 原生）
+
+Tauri 在 WSL/Linux 宿主上交叉编译 Windows NSIS 包时会调用 `makensis.exe`，因路径与
+工具链不兼容必然失败（见 tauri-apps/tauri#12312；官方仅支持 MSVC target 交叉编译，且明确
+建议作为最后手段）。Windows 安装包须在 **Windows 原生环境（PowerShell）** 打包。
+
+.WSL 与 Windows 分工
+[cols="1,2,3"]
+|===
+| 任务 | 在哪 | 命令
+
+| 日常开发 / 热重载 | WSL | `make dev`
+| Linux 安装包 | WSL | `make pkg-linux`
+| Windows .exe（快速测试） | WSL | `make windows`
+| Windows NSIS 安装包（发布） | Windows 原生 | `.\scripts\build-windows.ps1`
+|===
+
+.Windows 侧一次性环境准备
+[cols="2,3"]
+|===
+| 依赖 | 说明 / 安装
+
+| Visual Studio 2022 Build Tools | 勾选 "Desktop development with C++"（MSVC + Windows SDK），Tauri 硬依赖
+| bun | 替代 npm，装依赖与跑构建更快（官网安装；亦可用 npm/npx）
+| Rust | `rustup-init.exe`，默认 `stable-x86_64-pc-windows-msvc`
+| NSIS | `makensis -VERSION` 可跑即可（本机已装于 `D:\soft\nsis-3.11`）
+| WiX Toolset v3 | （可选）仅当需要 `.msi`；只出 nsis 不需要
+|===
+
+[IMPORTANT]
+====
+代码须放在 **Windows 原生路径**（如 `C:\code\DocForge`）构建，不要在 WSL 暴露的网络路径
+（`\\wsl.localhost\...`）上跑——跨文件系统性能差，且 `node_modules` 与 tauri-cli 二进制
+平台特定，不能与 WSL 共用。
+====
+
+[source,powershell]
+----
+# 首次需放开脚本执行策略（仅一次，针对当前用户）：
+#   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+cd C:\code\DocForge     # 项目放在 Windows 原生路径
+git pull                # 拉取最新代码（按需）
+.\scripts\build-windows.ps1
+----
+
+脚本封装了 `bun install` + `bunx tauri build --bundles nsis`。产物：
+`src-tauri\target\release\bundle\nsis\DocForge_0.1.0_x64-setup.exe`
+
+[NOTE]
+====
+`bundle.targets` 为 `"all"` 时会同时尝试 nsis 与 msi；`--bundles nsis` 指定只出 NSIS 包，
+无需 WiX。首次编译 Rust（msvc）较久，属正常。
+====
 
 === 启动
 

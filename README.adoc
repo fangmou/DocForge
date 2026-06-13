@@ -3,7 +3,7 @@
 :toclevels: 2
 
 image:https://img.shields.io/badge/version-0.1.0-blue[Version]
-image:https://img.shields.io/badge/license-MIT-green[License]
+image:https://img.shields.io/badge/license-GPLv3-blue[License]
 image:https://img.shields.io/badge/Tauri-v2-orange[Tauri]
 image:https://img.shields.io/badge/Lit-3-blueviolet[Lit]
 
@@ -87,4 +87,6 @@ DocForge/
 
 == 许可证
 
-MIT License. 详见 LICENSE 文件。
+本项目基于 GPL-3.0-or-later 协议开源。详见 LICENSE 文件。
+
+Copyright (C) 2026 Fangmou

@@ -5,4 +5,5 @@ src-tauri/target/
 *.local
 .claude/plans/
 .claude/scheduled_tasks.json
+.claude/settings.local.json
 build.sh

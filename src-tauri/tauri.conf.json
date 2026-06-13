@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegram/nicetauri/refs/heads/v2/core/tauri-config-schema/schema.json",
+  "$schema": "https://schema.tauri.app/config.json",
   "productName": "DocForge",
   "version": "0.1.0",
   "identifier": "com.fangmou.docforge",
@@ -21,11 +21,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https:; worker-src 'self' blob:"
     }
   },
   "bundle": {
     "active": true,
+    "publisher": "fangmou",
+    "copyright": "Copyright (C) 2026 Fangmou",
+    "category": "Productivity",
     "targets": "all",
     "icon": [
       "icons/128x128.png",

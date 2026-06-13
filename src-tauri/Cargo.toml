@@ -1,6 +1,14 @@
 [package]
 name = "docforge"
 version = "0.1.0"
+description = "AI 原生、可扩展的本地 AsciiDoc 编辑器 — 为思想工程师而造"
+license = "GPL-3.0-or-later"
+authors = ["Fangmou <iaming@me.com>"]
+repository = "https://github.com/fangmou/DocForge"
+homepage = "https://github.com/fangmou/DocForge"
+readme = "../README.adoc"
+keywords = ["asciidoc", "editor", "ai", "tauri", "knowledge-graph"]
+categories = ["text-editors", "development-tools"]
 edition = "2021"
 
 [features]

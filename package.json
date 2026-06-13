@@ -1,6 +1,27 @@
 {
   "name": "docforge",
   "version": "0.1.0",
+  "description": "AI 原生、可扩展的本地 AsciiDoc 编辑器 — 为思想工程师而造",
+  "license": "GPL-3.0-or-later",
+  "author": "Fangmou <iaming@me.com> (https://github.com/fangmou)",
+  "homepage": "https://github.com/fangmou/DocForge#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fangmou/DocForge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fangmou/DocForge/issues"
+  },
+  "keywords": [
+    "asciidoc",
+    "markdown",
+    "editor",
+    "ai",
+    "tauri",
+    "lit",
+    "knowledge-graph",
+    "desktop"
+  ],
   "private": true,
   "type": "module",
   "scripts": {
