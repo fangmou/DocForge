@@ -557,7 +557,6 @@ pub fn collect_adoc_files<'a>(
                 result.extend(collect_adoc_files(&path).await?);
             } else if name.ends_with(".adoc")
                 || name.ends_with(".asciidoc")
-                || name.ends_with(".txt")
                 || name.ends_with(".md")
                 || name.ends_with(".markdown")
             {

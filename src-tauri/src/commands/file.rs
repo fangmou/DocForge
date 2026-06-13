@@ -220,7 +220,6 @@ fn list_adoc_recursive(
                 files.extend(sub);
             } else if name.ends_with(".adoc")
                 || name.ends_with(".asciidoc")
-                || name.ends_with(".txt")
                 || name.ends_with(".md")
                 || name.ends_with(".markdown")
             {

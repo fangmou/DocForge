@@ -41,7 +41,7 @@ pub fn detect_format(path: &str) -> Option<Box<dyn DocumentFormat>> {
         .unwrap_or("")
         .to_lowercase();
     match ext.as_str() {
-        "adoc" | "asciidoc" | "txt" => Some(Box::new(AsciidocFormat)),
+        "adoc" | "asciidoc" => Some(Box::new(AsciidocFormat)),
         "md" | "markdown" => Some(Box::new(MarkdownFormat)),
         _ => None,
     }
@@ -427,7 +427,6 @@ mod tests {
     fn detect_adoc_variants() {
         assert!(detect_format("test.adoc").is_some());
         assert!(detect_format("test.asciidoc").is_some());
-        assert!(detect_format("test.txt").is_some());
     }
 
     #[test]
@@ -442,6 +441,8 @@ mod tests {
         assert!(detect_format("test.rs").is_none());
         assert!(detect_format("test").is_none());
         assert!(detect_format("test.html").is_none());
+        // .txt 是纯文本，不应被当作 AsciiDoc
+        assert!(detect_format("test.txt").is_none());
     }
 
     // ─── AsciidocFormat ───

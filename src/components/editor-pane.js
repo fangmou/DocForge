@@ -1269,10 +1269,10 @@ class EditorPane extends LitElement {
         if (editorState.workspaceRoot) eventBus.emit('workspace-opened', editorState.workspaceRoot);
         this._cleanupDraft(oldPath);
         this._fileMtime = await getFileMtime(savePath).catch(() => null);
-        this._saving = false;
       } catch (e) {
-        this._saving = false;
         console.error('保存失败:', e);
+      } finally {
+        this._saving = false;
       }
       return;
     }
@@ -1283,11 +1283,11 @@ class EditorPane extends LitElement {
       editorState.markSaved(this._currentPath);
       eventBus.emit('file-saved', { path: this._currentPath, content });
       this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
-      this._saving = false;
       this._cleanupDraft();
     } catch (e) {
-      this._saving = false;
       console.error('保存失败:', e);
+    } finally {
+      this._saving = false;
     }
   }
 
@@ -1371,9 +1371,10 @@ class EditorPane extends LitElement {
     const path = `__untitled_${this._untitledCounter}_${Date.now()}`;
     this._currentPath = path;
     editorState.openFile(path, content);
+    // 先更新格式再设置内容：includeLinkPlugin 在 docChanged 时按 _currentFormatId 重建装饰
+    this._updateFormat(path);
     this._setEditorContent(content);
     eventBus.emit('content-changed', content);
-    this._updateFormat(path);
     this._view?.focus();
   }
 

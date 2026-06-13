@@ -7,7 +7,7 @@
 *参数*: `workspace_root: String`
 *返回*: `Result<(), String>`
 
-递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt`/`.md`/`.markdown` 文件，通过 `DocumentFormat` trait 按格式提取标签、标题、大纲，链接解析仅限 AsciiDoc 格式（`xref:`/`<<>>`/`include::`）。四种数据批量写入 SQLite 内存数据库。跳过以 `.` 开头的隐藏目录和文件。
+递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.md`/`.markdown` 文件，通过 `DocumentFormat` trait 按格式提取标签、标题、大纲，链接解析仅限 AsciiDoc 格式（`xref:`/`<<>>`/`include::`）。四种数据批量写入 SQLite 内存数据库。跳过以 `.` 开头的隐藏目录和文件。
 
 前端 `link-index.js` 会在构建后批量加载标题到本地 `_titleCache`（同步 `getTitle()` 使用）。
 
@@ -27,7 +27,7 @@
 
 向文件追加标签，按格式自动选择写入方式：
 
-- **AsciiDoc** (`.adoc`/`.asciidoc`/`.txt`): 写入 `:keywords:` 属性，已有则追加（逗号分隔），否则在文件头（标题行后）插入新行
+- **AsciiDoc** (`.adoc`/`.asciidoc`): 写入 `:keywords:` 属性，已有则追加（逗号分隔），否则在文件头（标题行后）插入新行
 - **Markdown** (`.md`/`.markdown`): 写入 YAML Front Matter `tags` 字段。无 front matter 时自动创建 `---\ntags: [tag]\n---`；已有则追加到数组
 
 返回修改后的文件内容，前端用 CodeMirror 替换编辑器内容。
