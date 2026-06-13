@@ -123,6 +123,41 @@ pub async fn clear_recent_files(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn remove_recent_file(
+    app: tauri::AppHandle,
+    state: State<'_, std::sync::Mutex<AppState>>,
+    path: String,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    if let Some(ref ws) = workspace_path {
+        if !ws.is_empty() {
+            let sp = workspace_state_path(&app, ws);
+            if sp.exists() {
+                let json = std::fs::read_to_string(&sp).unwrap_or_default();
+                let mut ws_state: WorkspaceState =
+                    serde_json::from_str(&json).unwrap_or_default();
+                let before = ws_state.recent_files.len();
+                ws_state.recent_files.retain(|f| f.path != path);
+                if ws_state.recent_files.len() != before {
+                    let json = serde_json::to_string_pretty(&ws_state).unwrap_or_default();
+                    let _ = std::fs::write(&sp, json);
+                }
+            }
+            return Ok(());
+        }
+    }
+    let mut guard = lock_config!(state);
+    let before = guard.recent_files.len();
+    guard.recent_files.retain(|f| f.path != path);
+    if guard.recent_files.len() != before {
+        let snapshot = guard.clone();
+        drop(guard);
+        persist_to_disk(&app, &snapshot);
+    }
+    Ok(())
+}
+
 // === 导出配置命令 ===
 
 /// 保存导出通用配置（output_dir, output_naming）

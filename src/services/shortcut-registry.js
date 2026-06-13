@@ -11,6 +11,7 @@
  */
 
 import { t } from './i18n.js';
+import { loadShortcuts, saveShortcuts } from './config-service.js';
 
 /**
  * 从键盘事件中提取可匹配的键名。
@@ -70,6 +71,10 @@ const DEFAULTS = {
   markupMono:         { default: 'Ctrl+Shift+`',   labelKey: 'shortcuts.markupMono' },
   markupLink:         { default: 'Ctrl+K',         labelKey: 'shortcuts.markupLink' },
   alignTable:         { default: 'Alt+Shift+T',    labelKey: 'shortcuts.alignTable' },
+  // 快捷切换器
+  quickSwitcher:      { default: 'Ctrl+Tab',        labelKey: 'shortcuts.quickSwitcher' },
+  fileQuickOpen:      { default: 'Ctrl+P',          labelKey: 'shortcuts.fileQuickOpen' },
+  workspaceSwitcher:  { default: 'Ctrl+Alt+\\',     labelKey: 'shortcuts.workspaceSwitcher' },
 };
 
 class ShortcutRegistry {
@@ -82,7 +87,6 @@ class ShortcutRegistry {
   async init() {
     if (this._loaded) return;
     try {
-      const { loadShortcuts } = await import('./config-service.js');
       this._overrides = await loadShortcuts();
       // 清除旧版 localStorage 残留
       localStorage.removeItem('docforge-shortcut-overrides');
@@ -176,7 +180,6 @@ class ShortcutRegistry {
 
   async _persist() {
     try {
-      const { saveShortcuts } = await import('./config-service.js');
       await saveShortcuts(this._overrides);
     } catch (_) {
       // 后台不可用时静默失败

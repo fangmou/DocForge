@@ -17,4 +17,13 @@ import './components/tags-panel.js';
 import './components/export-history-panel.js';
 import './components/graph-view.js';
 import './components/plugin-manager-panel.js';
+import './components/quick-switcher.js';
 import './components/app-shell.js';
+
+// F12 切换 DevTools（需 Rust 端启用 devtools feature）
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'F12') {
+    e.preventDefault();
+    window.__TAURI_INTERNALS__?.invoke('toggle_devtools').catch(() => {});
+  }
+});

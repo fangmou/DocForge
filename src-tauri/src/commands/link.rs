@@ -39,11 +39,21 @@ pub async fn update_link_file(
 /// 追加标签到文件（返回修改后的内容，前端用 CodeMirror 替换）
 #[tauri::command]
 pub async fn add_tag_to_file(
-    _file_path: String,
+    file_path: String,
     content: String,
     tag: String,
 ) -> Result<String, String> {
-    Ok(link_db::add_tag_to_content(&content, &tag))
+    Ok(link_db::add_tag_to_content(&content, &tag, &file_path))
+}
+
+/// 从文件中移除标签（返回修改后的内容，前端用 CodeMirror 替换）
+#[tauri::command]
+pub async fn remove_tag_from_file(
+    file_path: String,
+    content: String,
+    tag: String,
+) -> Result<String, String> {
+    Ok(link_db::remove_tag_from_content(&content, &tag, &file_path))
 }
 
 /// 查询反向链接

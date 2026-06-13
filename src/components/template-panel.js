@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
+import { listDirectory, readFile } from '../services/file-service.js';
 
 // 内置模板
 function getBuiltinTemplates() {
@@ -158,7 +159,6 @@ class TemplatePanel extends LitElement {
       return;
     }
     try {
-      const { listDirectory, readFile } = await import('../services/file-service.js');
       const templateDir = wsRoot + '/.docforge/templates';
       const entries = await listDirectory(templateDir);
       const files = (entries || []).filter(e => !e.is_dir && (e.name.endsWith('.adoc') || e.name.endsWith('.asciidoc') || e.name.endsWith('.txt')));

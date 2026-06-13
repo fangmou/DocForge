@@ -5,6 +5,9 @@ import { setPreviewSync, syncEditor } from '../services/scroll-sync.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
 import { buildAttributes } from '../services/asciidoc-attrs.js';
+import { getFileCategory, getFormat } from '../services/format-commands.js';
+import { readBinaryFile } from '../services/file-service.js';
+import { resolveIncludes } from '../services/export-service.js';
 
 let asciidoctor = null;
 let markedInstance = null;
@@ -15,6 +18,14 @@ async function getMarked() {
     markedInstance = marked;
   }
   return markedInstance;
+}
+
+function stripFrontMatter(content) {
+  const lines = content.split('\n');
+  if (lines[0]?.trim() !== '---') return content;
+  const endIdx = lines.slice(1).findIndex(l => l.trim() === '---') + 1;
+  if (endIdx <= 0) return content;
+  return lines.slice(endIdx + 1).join('\n');
 }
 
 class PreviewPane extends LitElement {
@@ -166,6 +177,54 @@ class PreviewPane extends LitElement {
       border-left-color: #d97706;
       background: rgba(217, 119, 6, 0.05);
     }
+    /* 纯文本预览 */
+    .preview-content pre.plain-text {
+      background: var(--bg-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .preview-content pre.plain-text code {
+      background: transparent;
+      padding: 0;
+      font-family: inherit;
+      font-size: inherit;
+    }
+    /* 二进制文件预览（图片/音频/视频） */
+    .preview-content .binary-preview {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 200px;
+      padding: 24px;
+    }
+    .preview-content .binary-preview img {
+      max-width: 100%;
+      max-height: 80vh;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .preview-content .binary-preview audio,
+    .preview-content .binary-preview video {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+    /* HTML / PDF iframe 预览 */
+    .preview-content .html-preview,
+    .preview-content .pdf-preview {
+      width: 100%;
+      height: 80vh;
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      background: white;
+    }
   `;
 
   constructor() {
@@ -213,7 +272,7 @@ class PreviewPane extends LitElement {
     eventBus.on('file-format-changed', this._formatHandler);
     // 初始化时同步当前格式（编辑器可能已打开文件）
     this._currentFormat = editorState.activeFilePath
-      ? (await import('../services/format-commands.js')).getFormat(editorState.activeFilePath)
+      ? getFormat(editorState.activeFilePath)
       : null;
   }
 
@@ -235,41 +294,107 @@ class PreviewPane extends LitElement {
     // edit 模式下跳过渲染（节省 CPU）
     if (this._viewMode === 'edit') return;
     this._debounceTimer = setTimeout(async () => {
-      const isMd = this._currentFormat?.id === 'md';
+      const filePath = editorState.activeFilePath;
+      const category = getFileCategory(filePath);
       try {
-        if (isMd) {
-          const marked = await getMarked();
-          this.renderedHtml = marked.parse(content);
-        } else {
-          if (!asciidoctor) return;
-          // 解析 include 指令
-          let resolved = content;
-          const activePath = editorState.activeFilePath;
-          if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
-            try {
-              const { resolveIncludes } = await import('../services/export-service.js');
-              const dir = activePath.replace(/\/[^/]+$/, '');
-              resolved = await resolveIncludes(content, dir);
-            } catch (_) {}
-          }
-          const baseAttrs = {
-            showtitle: true,
-            toc: 'auto',
-            'source-highlighter': 'highlight.js',
-            sectanchors: '',
-            icons: 'font',
-          };
-          const attrs = buildAttributes(resolved, baseAttrs);
-          this.renderedHtml = asciidoctor.convert(resolved, {
-            safe: 'safe',
-            attributes: attrs,
-          });
+        switch (category) {
+          case 'markup':
+            await this._renderMarkup(content);
+            break;
+          case 'svg':
+            this.renderedHtml = `<div class="binary-preview"><img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}" alt="" /></div>`;
+            break;
+          case 'html':
+            this._renderHtml(content);
+            break;
+          case 'image':
+          case 'audio':
+          case 'video':
+          case 'pdf':
+            await this._renderBinary(filePath, category);
+            break;
+          case 'text':
+          default:
+            this._renderPlainText(content);
+            break;
         }
       } catch (e) {
         console.error('渲染错误:', e);
         this.renderedHtml = `<p style="color:red">${t('msg.renderError', { error: e.message })}</p>`;
       }
     }, 200);
+  }
+
+  async _renderMarkup(content) {
+    const isMd = this._currentFormat?.id === 'md';
+    if (isMd) {
+      const marked = await getMarked();
+      const body = content.startsWith('---') ? stripFrontMatter(content) : content;
+      this.renderedHtml = marked.parse(body);
+    } else {
+      if (!asciidoctor) return;
+      // 解析 include 指令
+      let resolved = content;
+      const activePath = editorState.activeFilePath;
+      if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
+        try {
+          const dir = activePath.replace(/\/[^/]+$/, '');
+          resolved = await resolveIncludes(content, dir);
+        } catch (_) {}
+      }
+      const baseAttrs = {
+        showtitle: true,
+        toc: 'auto',
+        'source-highlighter': 'highlight.js',
+        sectanchors: '',
+        icons: 'font',
+      };
+      const attrs = buildAttributes(resolved, baseAttrs);
+      this.renderedHtml = asciidoctor.convert(resolved, {
+        safe: 'safe',
+        attributes: attrs,
+      });
+    }
+  }
+
+  _renderPlainText(content) {
+    const escaped = content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    this.renderedHtml = `<pre class="plain-text"><code>${escaped}</code></pre>`;
+  }
+
+  _renderHtml(content) {
+    const escaped = content
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;');
+    this.renderedHtml = `<iframe srcdoc="${escaped}" sandbox class="html-preview"></iframe>`;
+  }
+
+  async _renderBinary(filePath, type) {
+    if (!filePath) return;
+    try {
+      const { base64, mime } = await readBinaryFile(filePath);
+      const src = `data:${mime};base64,${base64}`;
+      switch (type) {
+        case 'image':
+          this.renderedHtml = `<div class="binary-preview"><img src="${src}" alt="" /></div>`;
+          break;
+        case 'audio':
+          this.renderedHtml = `<div class="binary-preview"><audio controls src="${src}"></audio></div>`;
+          break;
+        case 'video':
+          this.renderedHtml = `<div class="binary-preview"><video controls src="${src}"></video></div>`;
+          break;
+        case 'pdf':
+          this.renderedHtml = `<iframe src="${src}" class="pdf-preview"></iframe>`;
+          break;
+      }
+    } catch (e) {
+      console.error('[preview] readBinaryFile failed:', e);
+      this.renderedHtml = `<p style="color:var(--text-3);text-align:center;padding-top:40px;">Preview not available</p>`;
+    }
   }
 
   // 滚动同步：编辑器滚动时跟随（scrollTop 赋值同步触发 scroll 事件）

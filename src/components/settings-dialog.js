@@ -11,6 +11,7 @@ import {
 import { eventBus } from '../services/event-bus.js';
 import { t, setLanguage, getLanguage } from '../services/i18n.js';
 import { shortcutRegistry, keyFromEvent } from '../services/shortcut-registry.js';
+import { detectPdfCommand, detectPandocCommand, resolveExportPath } from '../services/export-service.js';
 
 class SettingsDialog extends LitElement {
   static properties = {
@@ -513,7 +514,7 @@ class SettingsDialog extends LitElement {
     this.fontSize = 14;
     this.tabSize = 4;
     this.wordWrap = false;
-    this.autoSaveInterval = 3;
+    this.autoSaveInterval = 0;
     this.vimMode = false;
     this.vimEscapeSeq = 'jk';
     this.defaultViewMode = 'split';
@@ -598,7 +599,7 @@ class SettingsDialog extends LitElement {
       this.tabSize = ed.tab_size || 4;
       this.theme = ed.theme || 'light';
       this.wordWrap = ed.word_wrap || false;
-      this.autoSaveInterval = ed.auto_save_interval ?? 3;
+      this.autoSaveInterval = ed.auto_save_interval ?? 0;
       this.language = ed.language || 'zh';
       this.vimMode = ed.vim_mode || false;
       this.vimEscapeSeq = ed.vim_escape_seq || 'jk';
@@ -704,6 +705,7 @@ class SettingsDialog extends LitElement {
         vim_escape_seq: this.vimEscapeSeq,
         default_view_mode: this.defaultViewMode,
       });
+      eventBus.emit('set-auto-save', this.autoSaveInterval);
       eventBus.emit('font-size-set', this.fontSize);
       eventBus.emit('set-word-wrap', this.wordWrap);
       eventBus.emit('set-vim-mode', { enabled: this.vimMode, escapeSeq: this.vimEscapeSeq });
@@ -795,7 +797,6 @@ class SettingsDialog extends LitElement {
     this.pdfStatusType = '';
     this.requestUpdate();
     try {
-      const { detectPdfCommand } = await import('../services/export-service.js');
       const info = await detectPdfCommand();
       if (info.available) {
         this.pdfStatus = info.display;
@@ -816,7 +817,6 @@ class SettingsDialog extends LitElement {
     this.pandocStatusType = '';
     this.requestUpdate();
     try {
-      const { detectPandocCommand } = await import('../services/export-service.js');
       const info = await detectPandocCommand();
       if (info.available) {
         this.pandocStatus = info.display;
@@ -844,7 +844,6 @@ class SettingsDialog extends LitElement {
     }
     this._resolveTimers[field] = setTimeout(async () => {
       try {
-        const { resolveExportPath } = await import('../services/export-service.js');
         const resolved = await resolveExportPath(value);
         if (resolved !== value.replace(/\\/g, '/')) {
           this[resolvedField] = resolved;
@@ -863,7 +862,6 @@ class SettingsDialog extends LitElement {
   async _preResolvePaths() {
     const fields = ['outputDir', 'fontsDir', 'coverImage', 'titleLogoImage', 'pageForegroundImage', 'docxReferenceDoc'].filter(f => this[f]);
     if (!fields.length) return;
-    const { resolveExportPath } = await import('../services/export-service.js');
     await Promise.allSettled(fields.map(async (field) => {
       const value = this[field];
       const resolved = await resolveExportPath(value);

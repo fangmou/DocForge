@@ -16,7 +16,7 @@ include::_partials/tech-stack.adoc[]
 │  search-panel / outline-panel / context-menu │
 │  template-panel / settings-dialog            │
 │  backlinks-panel / tags-panel / graph-view   │
-│  plugin-manager-panel                        │
+│  plugin-manager-panel / quick-switcher       │
 ├─────────────────────────────────────────────┤
 │           服务层 (JS Services)                │
 │  file-service / ai-service / event-bus       │
@@ -36,6 +36,7 @@ include::_partials/tech-stack.adoc[]
 │  ai_client (reqwest + rustls)                │
 │  link_db (SQLite 内存数据库)                  │
 │    · 文件标题 / 双向链接 / 标签 / 大纲       │
+│    · DocumentFormat trait 多格式解析          │
 │    · 运行时缓存，唯一事实源为文本文件         │
 └─────────────────────────────────────────────┘
 ....

@@ -24,10 +24,14 @@ pub fn run() {
             // 初始化链接索引数据库（内存 SQLite）
             let link_db = services::link_db::LinkDb::new().expect("Failed to init link DB");
             app.manage(std::sync::Mutex::new(link_db));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(feature = "devtools")]
+            commands::dev::toggle_devtools,
             commands::file::read_file,
+            commands::file::read_binary_file,
             commands::file::write_file,
             commands::file::list_directory,
             commands::file::list_sub_directory,
@@ -44,6 +48,7 @@ pub fn run() {
             commands::link::build_link_index,
             commands::link::update_link_file,
             commands::link::add_tag_to_file,
+            commands::link::remove_tag_from_file,
             commands::link::query_backlinks,
             commands::link::query_forward_links,
             commands::link::query_title,
@@ -90,6 +95,7 @@ pub fn run() {
             commands::config::get_default_extra_args,
             commands::config::add_recent_file,
             commands::config::get_recent_files,
+            commands::config::remove_recent_file,
             commands::config::clear_recent_files,
             commands::config::set_current_workspace,
             commands::config::get_current_workspace,

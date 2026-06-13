@@ -9,14 +9,16 @@ export function getLanguage() {
 
 export async function setLanguage(lang) {
   currentLang = lang;
+  if (lang === 'zh') {
+    messages = zhMessages;
+    return;
+  }
   try {
     const mod = await import(`../i18n/${lang}.json`);
     messages = mod.default || mod;
   } catch (_) {
     // 加载失败时回退到中文
-    if (lang !== 'zh') {
-      messages = zhMessages;
-    }
+    messages = zhMessages;
   }
 }
 

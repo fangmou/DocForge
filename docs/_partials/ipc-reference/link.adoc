@@ -7,7 +7,7 @@
 *参数*: `workspace_root: String`
 *返回*: `Result<(), String>`
 
-递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt` 文件，单次解析提取链接、标题、标签、大纲四种数据，批量写入 SQLite 内存数据库。跳过以 `.` 开头的隐藏目录和文件。
+递归扫描工作区内所有 `.adoc`/`.asciidoc`/`.txt`/`.md`/`.markdown` 文件，通过 `DocumentFormat` trait 按格式提取标签、标题、大纲，链接解析仅限 AsciiDoc 格式（`xref:`/`<<>>`/`include::`）。四种数据批量写入 SQLite 内存数据库。跳过以 `.` 开头的隐藏目录和文件。
 
 前端 `link-index.js` 会在构建后批量加载标题到本地 `_titleCache`（同步 `getTitle()` 使用）。
 
@@ -25,7 +25,25 @@
 *参数*: `file_path: String, content: String, tag: String`
 *返回*: `Result<String, String>`
 
-向文件的 `:keywords:` 属性追加标签。如已有 `:keywords:` 行则追加（逗号分隔），否则在文件头（标题行后）插入新行。返回修改后的文件内容，前端用 CodeMirror 替换编辑器内容。
+向文件追加标签，按格式自动选择写入方式：
+
+- **AsciiDoc** (`.adoc`/`.asciidoc`/`.txt`): 写入 `:keywords:` 属性，已有则追加（逗号分隔），否则在文件头（标题行后）插入新行
+- **Markdown** (`.md`/`.markdown`): 写入 YAML Front Matter `tags` 字段。无 front matter 时自动创建 `---\ntags: [tag]\n---`；已有则追加到数组
+
+返回修改后的文件内容，前端用 CodeMirror 替换编辑器内容。
+
+[[remove-tag-from-file]]
+=== remove_tag_from_file
+
+*参数*: `file_path: String, content: String, tag: String`
+*返回*: `Result<String, String>`
+
+从文件中移除标签，按格式自动选择处理方式：
+
+- **AsciiDoc**: 从 `:keywords:` 属性中移除指定标签；移除后无剩余标签则删除整行
+- **Markdown**: 从 YAML Front Matter `tags` 数组中移除指定标签；移除后无剩余标签则删除 `tags` 字段
+
+返回修改后的文件内容，前端用 CodeMirror 替换编辑器内容。
 
 [[query-backlinks]]
 === query_backlinks
@@ -138,7 +156,7 @@ pub struct GraphEdge {
 *参数*: `file_path: String`
 *返回*: `Vec<HeadingEntry>`
 
-查询指定文件的大纲标题列表。从 `= Title` 和 `. Title` 行提取，按行号排序。用于大纲面板展示。
+查询指定文件的大纲标题列表。按格式提取：AsciiDoc 从 `= Title` 行提取，Markdown 从 `# Title` 行提取。按行号排序。用于大纲面板展示。
 
 *HeadingEntry 结构*:
 [source,rust]

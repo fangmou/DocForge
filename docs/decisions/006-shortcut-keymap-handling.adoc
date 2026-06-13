@@ -1,0 +1,77 @@
+= 快捷键与 Keymap 处理架构
+
+== 问题
+
+CodeMirror 6 的 keymap 优先级机制与 Vim 模式的按键拦截存在复杂的交互关系，导致快捷键冲突难以排查：
+- Ctrl+F 在 Vim 普通模式下打开搜索面板而非翻页
+- Ctrl+B 在 Vim 普通模式下粗体而非翻页
+- 搜索面板标签无法翻译
+
+== 架构
+
+=== 三层 Keymap 优先级
+
+CodeMirror 扩展列表中，**后添加**的扩展 keymap 优先级更高（先被检查）：
+
+[cols="1,1,2"]
+|===
+| Compartment | 位置 | 内容
+
+| `baseKeymapCompartment`
+| 扩展列表靠前
+| `standardKeymap` + `searchKeymap` + `closeBracketsKeymap` + `completionKeymap` + `indentWithTab`
+
+| `vimCompartment`
+| 中间
+| `@replit/codemirror-vim` 扩展，在普通模式拦截所有按键
+
+| `keymapCompartment`
+| 扩展列表靠后（最高优先级）
+| 用户自定义快捷键（通过 `shortcut-registry.js` 配置）
+|===
+
+=== 按键处理流程
+
+. 用户按下快捷键
+. `keymapCompartment`（最高优先级）先检查
+. `vimCompartment` 在普通模式会拦截所有按键
+. `baseKeymapCompartment`（最低优先级）兜底
+
+=== Vim 模式特殊处理
+
+Vim 扩展在普通模式下会拦截几乎所有按键，通过自身命令系统处理。这导致两个问题：
+
+1. **Ctrl-F 冲突**: `searchKeymap` 包含 `Mod-f` → 打开搜索面板，与 Vim 的翻页行为冲突
+2. **Ctrl-B 冲突**: 同理，`searchKeymap` 包含 `Mod-b` 但在 Vim 中应为翻页
+
+**解决方案**: `_buildBaseKeymap(vimEnabled)` 在 vim 启用时从 `searchKeymap` 过滤掉 `Mod-f` 和 `Mod-b`，由 `keymapCompartment` 中的自定义绑定（`cursorPageDown` / `cursorPageUp`）接管：
+
+```javascript
+searchKeymap.filter(b => b.key !== 'Mod-g' &&
+  (!vimEnabled || !['Mod-f', 'Mod-b'].includes(b.key)))
+```
+
+=== CodeMirror 内置 UI 翻译
+
+`@codemirror/search` 的搜索面板通过 `view.state.phrase()` 获取标签文本。翻译通过 `EditorState.phrases` facet 注入：
+
+- `phrasesCompartment` 在编辑器初始化时加载
+- `buildCmPhrases()` 从 `i18n` 系统 `t()` 构建翻译映射
+- 监听 `language-changed` 事件动态更新
+
+复用现有 `search.*` i18n 键（如 `search.replace`、`search.regex`），只为无对应项的 phrase 新增键（如 `search.find`、`search.next`）。
+
+=== CSS 变量一致性
+
+编辑器内面板（vim-panel、search-panel）统一使用 `app.css` 中定义的 CSS 变量：
+
+- `--accent`（主题色，非 `--color-primary`）
+- `--bg-1`、`--bg-3`（背景色）
+- `--text-1`、`--text-3`（文字色）
+- `--border-medium`（边框色）
+
+== 关键文件
+
+- `src/components/editor-pane.js` — `_buildBaseKeymap()`、`_applyShortcutKeymap()`、`_applyVimMode()`
+- `src/services/shortcut-registry.js` — 快捷键注册中心
+- `src/i18n/zh.json` / `en.json` — 翻译（含 CodeMirror phrase 键）

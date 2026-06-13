@@ -3,6 +3,8 @@ import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { forceLayout } from '../services/graph-layout.js';
 import { t } from '../services/i18n.js';
+import { linkIndex } from '../services/link-index.js';
+import { readFile } from '../services/file-service.js';
 
 class GraphView extends LitElement {
   static properties = {
@@ -105,7 +107,6 @@ class GraphView extends LitElement {
 
   async _buildGraph() {
     try {
-      const { linkIndex } = await import('../services/link-index.js');
       // 确保索引已就绪
       if (linkIndex.ready) await linkIndex.ready;
       const data = await linkIndex.getGraphData();
@@ -257,7 +258,6 @@ class GraphView extends LitElement {
       if (dx * dx + dy * dy < 225) { // 15px 半径
         (async () => {
           try {
-            const { readFile } = await import('../services/file-service.js');
             const content = await readFile(node.id);
             editorState.openFile(node.id, content);
             eventBus.emit('file-opened', { path: node.id, content });

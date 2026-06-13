@@ -4,6 +4,26 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   clearScreen: false,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@codemirror') || id.includes('@replit/codemirror-vim')
+                || id.includes('@lezer')) {
+              return 'codemirror';
+            }
+            if (id.includes('@tauri-apps')) {
+              return 'tauri';
+            }
+            if (id.includes('lit')) {
+              return 'lit';
+            }
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

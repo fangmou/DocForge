@@ -4,7 +4,7 @@ export function untitledName(path) {
   return 'untitled.adoc';
 }
 
-class EditorState {
+export class EditorState {
   constructor() {
     this.files = new Map();
     this.tabOrder = [];
@@ -45,6 +45,18 @@ class EditorState {
     if (fromIdx === -1 || toIdx === -1) return;
     this.tabOrder.splice(fromIdx, 1);
     this.tabOrder.splice(toIdx, 0, fromPath);
+    this._notify();
+  }
+
+  renameFile(oldPath, newPath) {
+    const fileData = this.files.get(oldPath);
+    if (!fileData) return;
+    this.files.delete(oldPath);
+    this.files.set(newPath, fileData);
+    this.tabOrder = this.tabOrder.map(p => p === oldPath ? newPath : p);
+    if (this.activeFilePath === oldPath) {
+      this.activeFilePath = newPath;
+    }
     this._notify();
   }
 

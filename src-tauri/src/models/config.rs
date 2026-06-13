@@ -45,7 +45,7 @@ impl Default for EditorConfig {
             tab_size: 4,
             theme: "light".into(),
             word_wrap: false,
-            auto_save_interval: 3,
+            auto_save_interval: 0,
             language: "zh".into(),
             sidebar_width: 240,
             vim_mode: false,

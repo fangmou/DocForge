@@ -644,6 +644,7 @@ dependencies = [
 name = "docforge"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures-util",
  "once_cell",
  "regex",

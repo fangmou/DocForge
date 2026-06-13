@@ -2,6 +2,8 @@ import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
+import { linkIndex } from '../services/link-index.js';
+import { readFile } from '../services/file-service.js';
 
 class BacklinksPanel extends LitElement {
   static properties = {
@@ -143,7 +145,6 @@ class BacklinksPanel extends LitElement {
     const path = editorState.activeFilePath;
     if (!path) { this.backlinks = []; return; }
     try {
-      const { linkIndex } = await import('../services/link-index.js');
       if (linkIndex.ready) await linkIndex.ready;
       this.backlinks = await linkIndex.getBacklinks(path);
     } catch (_) {
@@ -153,7 +154,6 @@ class BacklinksPanel extends LitElement {
 
   async _openBacklink(bl) {
     try {
-      const { readFile } = await import('../services/file-service.js');
       const content = await readFile(bl.source);
       editorState.openFile(bl.source, content);
       eventBus.emit('file-opened', { path: bl.source, content });

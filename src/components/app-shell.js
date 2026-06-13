@@ -3,6 +3,10 @@ import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { setLanguage, t } from '../services/i18n.js';
 import { readFile, writeFile, deleteFile } from '../services/file-service.js';
+import { linkIndex } from '../services/link-index.js';
+import { pluginLoader } from '../services/plugin-loader.js';
+import { shortcutRegistry } from '../services/shortcut-registry.js';
+import { loadEditorConfig, saveEditorConfig, getCurrentWorkspace, getRecentWorkspaces, loadWorkspaceState, saveWorkspaceState } from '../services/config-service.js';
 
 class AppShell extends LitElement {
   static properties = {
@@ -142,12 +146,12 @@ class AppShell extends LitElement {
         }
       },
       'toggle-preview': () => {
-        const modes = ['split', 'edit', 'preview'];
+        const modes = ['edit', 'split', 'preview'];
         const idx = modes.indexOf(this.viewMode);
         this._setViewMode(modes[(idx + 1) % 3]);
       },
       'cycle-view-mode': () => {
-        const modes = ['split', 'edit', 'preview'];
+        const modes = ['edit', 'split', 'preview'];
         const idx = modes.indexOf(this.viewMode);
         this._setViewMode(modes[(idx + 1) % 3]);
       },
@@ -189,8 +193,6 @@ class AppShell extends LitElement {
       this._workspacePath = wsPath || '';
       this._updateTitle();
       // 4. 加载插件和链接索引（并行）
-      const { pluginLoader } = await import('../services/plugin-loader.js');
-      const { linkIndex } = await import('../services/link-index.js');
       pluginLoader.loadAll(wsPath).catch(() => {});
       linkIndex.buildIndex(wsPath).catch(() => {});
       // 5. 恢复新工作区状态
@@ -214,21 +216,35 @@ class AppShell extends LitElement {
     this._setupDragDrop();
     // 全局快捷键
     this._shortcutRegistry = null;
-    import('../services/shortcut-registry.js').then(({ shortcutRegistry }) => {
-      this._shortcutRegistry = shortcutRegistry;
-    }).catch(() => {});
+    this._shortcutRegistry = shortcutRegistry;
     this._globalKeyHandler = (e) => {
       // ESC 关闭：按优先级关闭最顶层的面板/对话框
       if (e.key === 'Escape') {
         if (this._handleEsc()) { e.preventDefault(); return; }
       }
 
+      // 快捷切换器打开时，全局快捷键不再处理（ESC 已在上面处理）
+      const qs = this.shadowRoot.querySelector('quick-switcher');
+      if (qs?.visible) return;
+
+      // Ctrl+Tab：打开快速切换器（IDEA 风格）
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Tab' && !e.altKey) {
+        e.preventDefault();
+        if (qs && !qs.visible) qs.show('tabSwitcher');
+        return;
+      }
+
+      // Ctrl+Alt+\：工作空间切换器
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === '\\') {
+        e.preventDefault();
+        if (qs && !qs.visible) qs.show('workspaceSwitcher');
+        return;
+      }
+
       // Ctrl+Alt+1~9 切换工作区（保留旧逻辑）
       if ((e.ctrlKey || e.metaKey) && e.altKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
-        import('../services/config-service.js').then(({ getRecentWorkspaces }) => {
-          return getRecentWorkspaces();
-        }).then(list => {
+        getRecentWorkspaces().then(list => {
           const idx = parseInt(e.key) - 1;
           if (list[idx]) eventBus.emit('workspace-opened', list[idx].path);
         }).catch(() => {});
@@ -273,13 +289,23 @@ class AppShell extends LitElement {
       if (actionMap[action]) actionMap[action]();
     };
     window.addEventListener('keydown', this._globalKeyHandler);
+    // Ctrl+P / Ctrl+Shift+P 在 capture 阶段拦截，防止 Vim 普通模式 / 浏览器打印拦截
+    this._captureKeyHandler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        if ((e.key === 'p' || e.key === 'P') && !e.shiftKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          const qs = this.shadowRoot.querySelector('quick-switcher');
+          if (qs) qs.show('fileOpener');
+        }
+      }
+    };
+    window.addEventListener('keydown', this._captureKeyHandler, true);
   }
 
   async _loadConfig() {
     try {
-      const { loadEditorConfig, getCurrentWorkspace } = await import('../services/config-service.js');
       // 加载快捷键自定义覆盖
-      const { shortcutRegistry } = await import('../services/shortcut-registry.js');
       await shortcutRegistry.init();
       // 加载语言
       const edConfig = await loadEditorConfig();
@@ -319,6 +345,9 @@ class AppShell extends LitElement {
   /** ESC 优先级：设置 > 图谱 > 插件 > 侧面板，返回 true 表示已处理 */
   _handleEsc() {
     const root = this.shadowRoot;
+    // 0. 快捷切换器（最高优先级）
+    const qs = root.querySelector('quick-switcher');
+    if (qs?.visible) { qs.hide(); return true; }
     // 1. 设置对话框
     const settings = root.querySelector('settings-dialog');
     if (settings?.visible) { settings.visible = false; settings.classList.remove('visible'); return true; }
@@ -356,7 +385,6 @@ class AppShell extends LitElement {
 
   /** 保存当前工作区的完整状态（tabs + drafts） */
   async _saveCurrentWorkspace(wsPath) {
-    const { saveWorkspaceState, loadWorkspaceState } = await import('../services/config-service.js');
     const serialized = editorState.serialize();
     const tabs = serialized.tabs;
     // 处理 dirty / untitled tabs：写 draft 文件
@@ -402,7 +430,6 @@ class AppShell extends LitElement {
 
   /** 恢复工作区状态 */
   async _restoreWorkspace(wsPath) {
-    const { loadWorkspaceState } = await import('../services/config-service.js');
     const wsState = await loadWorkspaceState(wsPath);
     if (!wsState || !wsState.tabs || wsState.tabs.length === 0) return;
     // 用 deserialize 重建元数据
@@ -564,12 +591,10 @@ class AppShell extends LitElement {
     // 持久化侧栏宽度
     const width = sidebar.offsetWidth;
     if (width > 0) {
-      import('../services/config-service.js').then(({ loadEditorConfig, saveEditorConfig }) => {
-        loadEditorConfig().then(config => {
+      loadEditorConfig().then(config => {
           config.sidebar_width = width;
           saveEditorConfig(config);
-        });
-      }).catch(() => {});
+        }).catch(() => {});
     }
   }
 
@@ -611,6 +636,7 @@ class AppShell extends LitElement {
       <context-menu></context-menu>
       <graph-view></graph-view>
       <plugin-manager-panel></plugin-manager-panel>
+      <quick-switcher></quick-switcher>
     `;
   }
 }

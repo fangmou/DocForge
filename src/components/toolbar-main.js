@@ -1,11 +1,13 @@
 import { LitElement, html, css, svg } from 'lit';
-import { pickDirectory } from '../services/file-service.js';
+import { pickDirectory, readFile } from '../services/file-service.js';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { exportToHtml, checkAsciidoctorPdf, exportToPdf, openInBrowser, checkPandoc, exportToDocx, pickDocxFile, importDocx } from '../services/export-service.js';
 import { t } from '../services/i18n.js';
 import { shortcutRegistry } from '../services/shortcut-registry.js';
 import { getFormat } from '../services/format-commands.js';
+import { loadEditorConfig, getCurrentWorkspace, addExportHistory } from '../services/config-service.js';
+import { showConfirm } from '../services/dialog.js';
 
 // Lucide 风格统一 SVG 图标 (viewBox 0 0 24 24, stroke 2)
 const icons = {
@@ -20,6 +22,7 @@ const icons = {
   columns: svg`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>`,
   wrap: svg`<path d="M3 6h18M3 12h15a3 3 0 110 6h-4m0 0l2-2m-2 2l2 2M3 18h7"/>`,
   search: svg`<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>`,
+  fileSearch: svg`<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="11" cy="15" r="3"/><path d="M20 20l-2-2"/>`,
   list: svg`<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>`,
   sparkles: svg`<path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 13l.9 2.7L22.6 16.5l-2.7.8L19 20l-.9-2.7-2.7-.8 2.7-.8z"/>`,
   upload: svg`<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>`,
@@ -224,9 +227,7 @@ class ToolbarMain extends LitElement {
     eventBus.on('export-pdf', this._exportPdfHandler);
     eventBus.on('export-docx', this._exportDocxHandler);
     document.addEventListener('click', this._clickOutside);
-    import('../services/config-service.js').then(({ loadEditorConfig }) => {
-      loadEditorConfig().then(c => { if (c.theme) this._theme = c.theme; }).catch(() => {});
-    }).catch(() => {});
+    loadEditorConfig().then(c => { if (c.theme) this._theme = c.theme; }).catch(() => {});
   }
 
   disconnectedCallback() {
@@ -285,6 +286,9 @@ class ToolbarMain extends LitElement {
   }
 
   render() {
+    const nextMode = { edit: 'split', split: 'preview', preview: 'edit' }[this._viewMode];
+    const nextIcon = { edit: 'edit', split: 'columns', preview: 'eye' }[nextMode];
+    const nextLabel = { edit: 'toolbar.viewEdit', split: 'toolbar.viewSplit', preview: 'toolbar.viewPreview' }[nextMode];
     return html`
       <!-- 侧栏切换 -->
       <button title="${t('toolbar.toggleSidebar')} (${shortcutRegistry.getShortcut('toggleSidebar')})"
@@ -294,6 +298,8 @@ class ToolbarMain extends LitElement {
       <!-- 文件操作组：常用操作图标+文字 -->
       <button class="btn-text" title="${t('menu.openDirectory')}"
               @click=${this._openDir}>${icon('folder')} ${t('toolbar.btnOpen')}</button>
+      <button title="${t('shortcuts.fileQuickOpen')} (${shortcutRegistry.getShortcut('fileQuickOpen')})"
+              @click=${() => this._openQuickSwitcher('fileOpener')}>${icon('fileSearch')}</button>
       <button class="btn-text" @click=${(e) => this._toggleDropdown('new', e)}>
         ${icon('plus')} ${t('toolbar.btnNew')} ${icon('chevron', 'ic-sm')}
       </button>
@@ -323,9 +329,9 @@ class ToolbarMain extends LitElement {
       ` : ''}
       <span class="sep"></span>
 
-      <!-- 视图切换 -->
-      <button title="${t('toolbar.togglePreview')} (${shortcutRegistry.getShortcut('togglePreview')})"
-              @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon(this._viewMode === 'split' ? 'columns' : this._viewMode === 'edit' ? 'edit' : 'eye')}</button>
+      <!-- 视图切换（显示下一模式图标） -->
+      <button title="${t(nextLabel)} (${shortcutRegistry.getShortcut('togglePreview')})"
+              @click=${() => this.dispatchEvent(new CustomEvent('toggle-preview'))}>${icon(nextIcon)}</button>
       <button title="${t('toolbar.toggleWordWrap')} (${shortcutRegistry.getShortcut('toggleWordWrap')})"
               @click=${() => eventBus.emit('toggle-word-wrap')}>${icon('wrap')}</button>
       <span class="sep"></span>
@@ -573,10 +579,14 @@ class ToolbarMain extends LitElement {
     }
   }
 
+  _openQuickSwitcher(mode) {
+    const qs = document.querySelector('app-shell')?.shadowRoot?.querySelector('quick-switcher');
+    if (qs && !qs.visible) qs.show(mode);
+  }
+
   async _importDocx() {
     this._dropdown = '';
     try {
-      const { getCurrentWorkspace } = await import('../services/config-service.js');
       const ws = await getCurrentWorkspace();
       if (!ws) {
         eventBus.emit('status-message', t('msg.noWorkspace'));
@@ -593,11 +603,9 @@ class ToolbarMain extends LitElement {
       // 同名 .adoc 已存在时确认覆盖
       const stem = docxPath.replace(/.*\//, '').replace(/\.[^.]+$/, '');
       const adocPath = ws.replace(/\/$/, '') + '/' + stem + '.adoc';
-      const { readFile } = await import('../services/file-service.js');
       let existing;
       try { existing = await readFile(adocPath); } catch (_) {}
       if (existing !== undefined) {
-        const { showConfirm } = await import('../services/dialog.js');
         const ok = await showConfirm(t('msg.confirmOverwrite', { name: stem + '.adoc' }));
         if (!ok) return;
       }
@@ -709,8 +717,6 @@ class ToolbarMain extends LitElement {
 
   async _recordExport(path, format) {
     try {
-      const { addExportHistory } = await import('../services/config-service.js');
-      const { editorState } = await import('../services/editor-state.js');
       await addExportHistory(path, format, editorState.workspaceRoot || undefined);
       eventBus.emit('export-done');
     } catch (_) {}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegram/nicetauri/refs/heads/v2/core/tauri-config-schema/schema.json",
-  "productName": "Fangmou DocForge",
+  "productName": "DocForge",
   "version": "0.1.0",
   "identifier": "com.fangmou.docforge",
   "build": {

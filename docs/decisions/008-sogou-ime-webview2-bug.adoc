@@ -1,0 +1,82 @@
+= 008 搜狗输入法 WebView2 交替丢字 Bug
+
+== 状态
+
+OPEN — 等待 Chromium 上游修复或用户规避
+
+== 症状
+
+在 Windows WebView2 下使用搜狗输入法输入中文时，**隔次上屏失败**：
+第一次选字无反应，第二次正常，第三次又不上屏，如此循环。
+英文输入不受影响。微软拼音输入法正常。
+
+典型表现：
+
+* F12 打开 DevTools 时输入恢复正常
+* 关闭 DevTools 后问题复现
+* DevTools 自身的控制台输入框也有同样问题
+* 另一台 Windows 设备（不同 Chromium 版本）无此问题
+
+== 环境
+
+[cols="1,3"]
+|===
+| OS | Windows 10/11
+| WebView2 | Chromium 149.0.7827.103+
+| 输入法 | 搜狗输入法（版本未知）
+| 框架 | Tauri v2 + CodeMirror 6 (`@codemirror/view ^6.36.8`)
+|===
+
+== 根因分析
+
+Chromium 149+ 的 TSF (Text Services Framework) 集成存在回归 Bug：
+`contenteditable` 元素的首次 IME 合成事件被静默吞掉。
+
+关键证据链：
+
+. **DevTools 开关影响** — 打开 DevTools 会创建第二个 WebView2 实例，
+  改变 TSF 上下文管理时序，使主编辑器的合成事件成为"第二个"而绕过 Bug。
+. **微软拼音正常** — 说明 Bug 与搜狗输入法的特定 TSF 实现方式交互触发。
+. **设备差异** — 不同 Chromium 版本表现不同，确认为版本特定回归。
+. **CM6 无责** — DevTools 控制台（非 CM6 编辑器）也有同样问题，
+  排除 CodeMirror 层面原因。
+
+外部参考：
+
+* https://discuss.codemirror.net/t/chinese-ime-punctuation-input-loses-every-other-keypress-requires-2-presses-per-character/9741[CodeMirror 论坛讨论]
+* https://juejin.cn/post/7649337767211237382[掘金：Chromium 149+ 导致中文输入首次丢失]
+
+== 已尝试的修复方案
+
+[cols="1,2,4"]
+|===
+| 方案 | 结果 | 说明
+
+| CM6 `imeWorkaroundPlugin`
+  （compositionend 时强制 `compositionPendingChange=true` + rAF flush）
+| 无效 | 问题在更底层的 TSF 事件分发，CM6 层面无法干预
+
+| 隐藏 WebView2 窗口
+  （创建不可见窗口作为 TSF 上下文"牺牲品"）
+| 无效 | 不可见窗口不注册 TSF 上下文，不影响主窗口事件分发
+
+| EditContext API 强制切换
+  （UA 欺骗让 CM6 启用 `window.EditContext`）
+| 无效 | EditContext 在桌面 Chromium 上行为不确定，
+  且问题发生在 TSF → composition 事件阶段，EditContext 无法绕过
+
+| CSS `-webkit-user-modify` 覆盖
+  （从 `read-write-plaintext-only` 改为 `read-write`）
+| 无效 | 该属性不影响 TSF 合成事件的吞没行为
+|===
+
+== 临时解决方案
+
+* **切换输入法**：使用微软拼音或其他 IME
+* **降级 WebView2**：回退到 Chromium 149 之前的版本
+* **等待上游修复**：关注 Chromium 发行说明中的 TSF 修复
+
+== 影响范围
+
+仅影响 Windows + WebView2 Chromium 149+ + 搜狗输入法的组合。
+macOS / Linux 不受影响。使用其他输入法的 Windows 用户不受影响。

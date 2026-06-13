@@ -2,6 +2,8 @@ import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
+import { linkIndex } from '../services/link-index.js';
+import { readFile } from '../services/file-service.js';
 
 class TagsPanel extends LitElement {
   static properties = {
@@ -282,7 +284,6 @@ class TagsPanel extends LitElement {
 
   async _loadTags() {
     try {
-      const { linkIndex } = await import('../services/link-index.js');
       if (linkIndex.ready) await linkIndex.ready;
       this.tags = await linkIndex.getAllTags();
       const path = editorState.activeFilePath;
@@ -305,7 +306,6 @@ class TagsPanel extends LitElement {
     this.activeTag = this.activeTag === tag ? '' : tag;
     if (this.activeTag) {
       try {
-        const { linkIndex } = await import('../services/link-index.js');
         const paths = await linkIndex.getFilesByTag(this.activeTag);
         this.files = paths.map(p => ({
           path: p,
@@ -321,7 +321,6 @@ class TagsPanel extends LitElement {
 
   async _openFile(path) {
     try {
-      const { readFile } = await import('../services/file-service.js');
       const content = await readFile(path);
       editorState.openFile(path, content);
       eventBus.emit('file-opened', { path, content });
@@ -336,7 +335,6 @@ class TagsPanel extends LitElement {
     const file = editorState.getFile(path);
     if (!file) return;
     try {
-      const { linkIndex } = await import('../services/link-index.js');
       const newContent = await linkIndex.addTagToFile(path, file.content, tag);
       eventBus.emit('replace-editor-content', newContent);
       await linkIndex.updateFile(path, newContent);
@@ -350,34 +348,12 @@ class TagsPanel extends LitElement {
     const file = editorState.getFile(path);
     if (!file) return;
     try {
-      const newContent = this._removeTagFromContent(file.content, tag);
+      const newContent = await linkIndex.removeTagFromFile(path, file.content, tag);
       eventBus.emit('replace-editor-content', newContent);
-      const { linkIndex } = await import('../services/link-index.js');
       await linkIndex.updateFile(path, newContent);
       if (this.activeTag === tag) this.activeTag = '';
       await this._loadTags();
     } catch (_) {}
-  }
-
-  _removeTagFromContent(content, tag) {
-    const lines = content.split('\n');
-    const result = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.toLowerCase().startsWith(':keywords:')) {
-        const val = trimmed.replace(/^:keywords:\s*/i, '');
-        const tags = val.split(',').map(s => s.trim()).filter(s => s && s !== tag);
-        if (tags.length > 0) {
-          // 保留原始行的前导缩进
-          const indent = line.match(/^(\s*)/)[1];
-          result.push(`${indent}:keywords: ${tags.join(', ')}`);
-        }
-        // 标签清空则删除整行
-      } else {
-        result.push(line);
-      }
-    }
-    return result.join('\n');
   }
 
   _onInputChange(e) {

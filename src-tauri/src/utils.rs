@@ -75,3 +75,107 @@ pub fn wsl_to_windows_path(path: &str) -> String {
     }
     path.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_path_backslash_to_forward() {
+        assert_eq!(
+            normalize_path(r"C:\Users\test\file.adoc"),
+            "C:/Users/test/file.adoc"
+        );
+    }
+
+    #[test]
+    fn normalize_path_unc_backslash() {
+        assert_eq!(
+            normalize_path(r"\\wsl.localhost\Ubuntu\home\user\file.adoc"),
+            "//wsl.localhost/Ubuntu/home/user/file.adoc"
+        );
+    }
+
+    #[test]
+    fn normalize_path_already_forward() {
+        assert_eq!(
+            normalize_path("/home/user/file.adoc"),
+            "/home/user/file.adoc"
+        );
+    }
+
+    #[test]
+    fn is_wsl_path_variants() {
+        assert!(is_wsl_path("//wsl.localhost/Ubuntu/home"));
+        assert!(is_wsl_path("//wsl/Ubuntu/home"));
+        assert!(!is_wsl_path("/home/user"));
+        assert!(!is_wsl_path("C:/Users"));
+    }
+
+    #[test]
+    fn wsl_distro_extracts_correctly() {
+        assert_eq!(
+            wsl_distro("//wsl.localhost/Ubuntu-22.04/home/user"),
+            Some("Ubuntu-22.04")
+        );
+        assert_eq!(wsl_distro("//wsl/Ubuntu/home/user"), Some("Ubuntu"));
+        assert_eq!(wsl_distro("/home/user"), None);
+        assert_eq!(wsl_distro("C:/Users"), None);
+    }
+
+    #[test]
+    fn wsl_to_linux_path_converts() {
+        assert_eq!(
+            wsl_to_linux_path("//wsl.localhost/Ubuntu-22.04/home/user/file.adoc"),
+            "/home/user/file.adoc"
+        );
+    }
+
+    #[test]
+    fn wsl_to_linux_path_alt_prefix() {
+        assert_eq!(
+            wsl_to_linux_path("//wsl/Ubuntu/home/user/doc.adoc"),
+            "/home/user/doc.adoc"
+        );
+    }
+
+    #[test]
+    fn wsl_to_linux_path_passthrough() {
+        assert_eq!(
+            wsl_to_linux_path("/home/user/file.adoc"),
+            "/home/user/file.adoc"
+        );
+    }
+
+    #[test]
+    fn windows_to_wsl_path_backslash() {
+        assert_eq!(
+            windows_to_wsl_path(r"C:\Users\test\file.adoc"),
+            "/mnt/c/Users/test/file.adoc"
+        );
+    }
+
+    #[test]
+    fn windows_to_wsl_path_forward_slash() {
+        assert_eq!(
+            windows_to_wsl_path("D:/Projects/doc.adoc"),
+            "/mnt/d/Projects/doc.adoc"
+        );
+    }
+
+    #[test]
+    fn windows_to_wsl_path_non_windows_passthrough() {
+        assert_eq!(
+            windows_to_wsl_path("/home/user/file.adoc"),
+            "/home/user/file.adoc"
+        );
+    }
+
+    #[test]
+    fn windows_to_wsl_path_lowercase_drive() {
+        assert_eq!(
+            windows_to_wsl_path("e:\\data\\test.md"),
+            "/mnt/e/data/test.md"
+        );
+    }
+}

@@ -63,6 +63,10 @@ export async function addRecentFile(path, workspacePath) {
   return invoke()('add_recent_file', { path, workspacePath: workspacePath || null });
 }
 
+export async function removeRecentFile(path, workspacePath) {
+  return invoke()('remove_recent_file', { path, workspacePath: workspacePath || null });
+}
+
 export async function getRecentFiles(workspacePath) {
   return invoke()('get_recent_files', { workspacePath: workspacePath || null });
 }

@@ -3,6 +3,8 @@ import { listDirectory, listSubDirectory, readFile, deleteFile, renameFile, crea
 import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { showConfirm } from '../services/dialog.js';
+import { isBinaryFile } from '../services/format-commands.js';
+import { getRecentFiles, getRecentWorkspaces, setCurrentWorkspace, removeRecentWorkspace, addRecentFile, removeRecentFile } from '../services/config-service.js';
 import { t } from '../services/i18n.js';
 
 class SidebarFiletree extends LitElement {
@@ -321,14 +323,12 @@ class SidebarFiletree extends LitElement {
 
   async _loadRecentFiles() {
     try {
-      const { getRecentFiles } = await import('../services/config-service.js');
       this.recentFiles = await getRecentFiles(this.rootPath || undefined);
     } catch (e) { this.recentFiles = []; }
   }
 
   async _loadRecentWorkspaces() {
     try {
-      const { getRecentWorkspaces } = await import('../services/config-service.js');
       this.recentWorkspaces = await getRecentWorkspaces();
     } catch (e) { this.recentWorkspaces = []; }
   }
@@ -339,10 +339,8 @@ class SidebarFiletree extends LitElement {
       this.entries = await listDirectory(path);
       editorState.workspaceRoot = path;
       // 持久化当前工作区
-      import('../services/config-service.js').then(({ setCurrentWorkspace }) => {
-        setCurrentWorkspace(path).catch(() => {});
-        this._loadRecentWorkspaces();
-      });
+      setCurrentWorkspace(path).catch(() => {});
+      this._loadRecentWorkspaces();
       this._loadRecentFiles();
     } catch (e) {
       console.error('加载目录失败:', e);
@@ -354,24 +352,20 @@ class SidebarFiletree extends LitElement {
     eventBus.emit('workspace-opened', path);
   }
 
-  /** 智能截断路径：缩写前缀/…/父目录（不重复文件夹名，ws-name 已显示） */
+  /** 智能截断路径：前缀/…/尾部，保证在窄侧边栏中尾部不被截 */
   _shortenPath(path) {
     const segs = path.split('/').filter(Boolean);
-    if (segs.length <= 3) return path;
-    // 缩写 wsl.localhost → wsl
+    if (segs.length <= 4) return path;
     const abbr = segs.map(s => s === 'wsl.localhost' ? 'wsl' : s);
-    const isUnc = path.startsWith('//');
-    const isUnix = !isUnc && path.startsWith('/');
-    const headCount = (isUnc || isUnix) ? 2 : 1;
-    const prefix = isUnix ? '/' : isUnc ? '//' : '';
-    const head = prefix + abbr.slice(0, headCount).join('/');
-    const parent = segs[segs.length - 2]; // 父目录
-    return `${head}/…/${parent}`;
+    // 前缀：取第一段（足够区分环境，尽量短）
+    const head = abbr[0];
+    // 尾部：祖父目录/父目录（ws-name 已显示文件夹名，不重复）
+    const tail = segs.slice(-3, -1).join('/');
+    return `${head}/…/${tail}`;
   }
 
   async _removeWorkspace(path) {
     try {
-      const { removeRecentWorkspace } = await import('../services/config-service.js');
       await removeRecentWorkspace(path);
       await this._loadRecentWorkspaces();
       this.requestUpdate();
@@ -384,17 +378,31 @@ class SidebarFiletree extends LitElement {
   }
 
   async _openFile(path) {
+    // 二进制文件：跳过文本读取，直接以空内容打开
+    if (isBinaryFile(path)) {
+      editorState.openFile(path, '');
+      eventBus.emit('file-opened', { path, content: '', binary: true });
+      addRecentFile(path, this.rootPath || undefined).catch(() => {});
+      this._loadRecentFiles();
+      return;
+    }
     try {
       const content = await readFile(path);
       editorState.openFile(path, content);
       eventBus.emit('file-opened', { path, content });
       // 记录最近文件
-      import('../services/config-service.js').then(({ addRecentFile }) => {
-        addRecentFile(path, this.rootPath || undefined).catch(() => {});
-        this._loadRecentFiles();
-      });
+      addRecentFile(path, this.rootPath || undefined).catch(() => {});
+      this._loadRecentFiles();
     } catch (e) {
-      console.error('打开文件失败:', e);
+      const msg = String(e?.message || e || '');
+      if (msg.includes('No such file') || msg.includes('不存在') || msg.includes('not found')) {
+        // 文件已删除，提示并从最近列表移除
+        await removeRecentFile(path, this.rootPath || undefined);
+        this.recentFiles = this.recentFiles.filter(f => f.path !== path);
+        await showConfirm(t('sidebar.fileDeleted'));
+      } else {
+        console.error('打开文件失败:', e);
+      }
     }
   }
 
@@ -543,15 +551,8 @@ class SidebarFiletree extends LitElement {
       const newPath = `${parent}/${newName}`;
       try {
         await renameFile(path, newPath);
-        if (editorState.files.has(path)) {
-          const fileData = editorState.files.get(path);
-          editorState.files.delete(path);
-          editorState.files.set(newPath, fileData);
-          if (editorState.activeFilePath === path) {
-            editorState.activeFilePath = newPath;
-          }
-          eventBus.emit('file-renamed', { oldPath: path, newPath });
-        }
+        editorState.renameFile(path, newPath);
+        eventBus.emit('file-renamed', { oldPath: path, newPath });
         await this._refresh();
       } catch (e) { console.error('重命名失败:', e); }
     } else if (type === 'new-file') {
@@ -573,9 +574,23 @@ class SidebarFiletree extends LitElement {
   }
 
   async _refresh() {
-    if (this.rootPath) {
-      await this._loadDir(this.rootPath);
+    if (!this.rootPath) return;
+    const expandedPaths = [...this.expanded];
+    try {
+      this.entries = await listDirectory(this.rootPath);
+    } catch (e) {
+      console.error('刷新目录失败:', e);
+      return;
     }
+    for (const dirPath of expandedPaths) {
+      const entry = this._findEntry(this.entries, dirPath);
+      if (entry) {
+        try { entry.children = await listSubDirectory(dirPath); }
+        catch (_) { /* 目录可能已被删除/重命名 */ }
+      }
+    }
+    this.expanded = new Set(expandedPaths);
+    this.requestUpdate();
   }
 
   _renderEntries(entries, depth = 0) {

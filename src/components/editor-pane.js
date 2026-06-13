@@ -14,7 +14,11 @@ import { writeFile, pickSaveFile, readFile, getFileMtime, deleteFile } from '../
 import { t } from '../services/i18n.js';
 import { showConfirm } from '../services/dialog.js';
 import { setEditorSync, syncPreview } from '../services/scroll-sync.js';
-import { getFormat, wrapInline, toggleLineComment, toggleBlockComment, insertHeading, toggleList, insertBlock, insertAdocLink, insertMdLink, alignAdocTable, insertSnippet } from '../services/format-commands.js';
+import { getFormat, isBinaryFile, wrapInline, toggleLineComment, toggleBlockComment, insertHeading, toggleList, insertBlock, insertAdocLink, insertMdLink, alignAdocTable, insertSnippet } from '../services/format-commands.js';
+import { linkIndex } from '../services/link-index.js';
+import { shortcutRegistry } from '../services/shortcut-registry.js';
+import { loadEditorConfig, saveEditorConfig, addRecentFile, loadWorkspaceState, saveWorkspaceState } from '../services/config-service.js';
+import { listAllAdocFiles } from '../services/file-service.js';
 
 function asciidocSyntax() {
   return {
@@ -88,11 +92,20 @@ function asciidocSyntax() {
 
 // 路径规范化（处理 .. 和 .）
 function _normalizePath(p) {
+  const isUnc = p.startsWith('//');
   const parts = p.split('/');
   const result = [];
   for (const part of parts) {
     if (part === '..') result.pop();
     else if (part !== '.' && part !== '') result.push(part);
+  }
+  // Windows 驱动器路径（如 D:）不额外加前缀
+  if (result.length > 0 && /^[A-Za-z]:$/.test(result[0])) {
+    return result.join('/');
+  }
+  // Windows UNC 路径（如 //wsl.localhost/...）保留 // 前缀
+  if (isUnc) {
+    return '//' + result.join('/');
   }
   return '/' + result.join('/');
 }
@@ -103,7 +116,6 @@ let _adocCacheWs = null;
 
 async function _getCachedAdocFiles(workspaceRoot) {
   if (_adocFileCache && _adocCacheWs === workspaceRoot) return _adocFileCache;
-  const { listAllAdocFiles } = await import('../services/file-service.js');
   _adocFileCache = await listAllAdocFiles(workspaceRoot);
   _adocCacheWs = workspaceRoot;
   return _adocFileCache;
@@ -169,6 +181,80 @@ function buildLinkDecorations(state) {
   return builder.finish();
 }
 
+/** 处理 Ctrl/Cmd+Click 跳转（include::, xref:, <<>>） */
+function _processLinkClick(e, view, decorations) {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const pos = view.posAtCoords(e);
+  if (pos == null) return;
+  let clicked = false;
+  decorations.between(pos, pos, () => { clicked = true; });
+  if (!clicked) return;
+
+  const line = view.state.doc.lineAt(pos);
+  const col = pos - line.from;
+  const currentPath = editorState.activeFilePath;
+  const wsRoot = editorState.workspaceRoot;
+  const baseDir = currentPath
+    ? currentPath.substring(0, currentPath.lastIndexOf('/'))
+    : wsRoot || '';
+
+  // include:: 跳转
+  let searchFrom = 0;
+  while (searchFrom < line.text.length) {
+    const idx = line.text.indexOf('include::', searchFrom);
+    if (idx === -1) break;
+    const pathStart = idx + 'include::'.length;
+    const bracketIdx = line.text.indexOf('[', pathStart);
+    if (bracketIdx > pathStart && col >= pathStart && col <= bracketIdx) {
+      const linkPath = line.text.slice(pathStart, bracketIdx);
+      e.preventDefault();
+      const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
+      eventBus.emit('open-external-file', resolved);
+      return;
+    }
+    searchFrom = pathStart;
+  }
+
+  // xref: 跳转
+  searchFrom = 0;
+  while (searchFrom < line.text.length) {
+    const idx = line.text.indexOf('xref:', searchFrom);
+    if (idx === -1) break;
+    const pathStart = idx + 'xref:'.length;
+    const endIdx = line.text.indexOf('[', pathStart);
+    if (endIdx > pathStart && col >= pathStart && col <= endIdx) {
+      const linkPath = line.text.slice(pathStart, endIdx).split('#')[0];
+      if (linkPath && !linkPath.startsWith('http')) {
+        e.preventDefault();
+        const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
+        eventBus.emit('open-external-file', resolved);
+      }
+      return;
+    }
+    searchFrom = pathStart;
+  }
+
+  // <<...>> 跳转
+  searchFrom = 0;
+  while (searchFrom < line.text.length) {
+    const idx = line.text.indexOf('<<', searchFrom);
+    if (idx === -1) break;
+    const endIdx = line.text.indexOf('>>', idx);
+    const commaIdx = line.text.indexOf(',', idx + 2);
+    if (endIdx > idx + 2 && col >= idx + 2 && col <= (commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx)) {
+      const refEnd = commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx;
+      const linkPath = line.text.slice(idx + 2, refEnd).split('#')[0].trim();
+      if (linkPath && !linkPath.startsWith('http')) {
+        e.preventDefault();
+        const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
+        eventBus.emit('open-external-file', resolved);
+      }
+      return;
+    }
+    searchFrom = endIdx > idx ? endIdx : idx + 2;
+  }
+}
+
 const includeLinkPlugin = ViewPlugin.fromClass(class {
   constructor(view) { this.decorations = buildLinkDecorations(view.state); }
   update(update) {
@@ -178,76 +264,7 @@ const includeLinkPlugin = ViewPlugin.fromClass(class {
   decorations: v => v.decorations,
   eventHandlers: {
     mousedown(e, view) {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const pos = view.posAtCoords(e);
-      if (pos == null) return;
-      let clicked = false;
-      this.decorations.between(pos, pos, () => { clicked = true; });
-      if (!clicked) return;
-
-      const line = view.state.doc.lineAt(pos);
-      const col = pos - line.from;
-      const currentPath = editorState.activeFilePath;
-      const wsRoot = editorState.workspaceRoot;
-      const baseDir = currentPath
-        ? currentPath.substring(0, currentPath.lastIndexOf('/'))
-        : wsRoot || '';
-
-      // include:: 跳转
-      let searchFrom = 0;
-      while (searchFrom < line.text.length) {
-        const idx = line.text.indexOf('include::', searchFrom);
-        if (idx === -1) break;
-        const pathStart = idx + 'include::'.length;
-        const bracketIdx = line.text.indexOf('[', pathStart);
-        if (bracketIdx > pathStart && col >= pathStart && col <= bracketIdx) {
-          const linkPath = line.text.slice(pathStart, bracketIdx);
-          e.preventDefault();
-          const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
-          eventBus.emit('open-external-file', resolved);
-          return;
-        }
-        searchFrom = pathStart;
-      }
-
-      // xref: 跳转
-      searchFrom = 0;
-      while (searchFrom < line.text.length) {
-        const idx = line.text.indexOf('xref:', searchFrom);
-        if (idx === -1) break;
-        const pathStart = idx + 'xref:'.length;
-        const endIdx = line.text.indexOf('[', pathStart);
-        if (endIdx > pathStart && col >= pathStart && col <= endIdx) {
-          const linkPath = line.text.slice(pathStart, endIdx).split('#')[0];
-          if (linkPath && !linkPath.startsWith('http')) {
-            e.preventDefault();
-            const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
-            eventBus.emit('open-external-file', resolved);
-          }
-          return;
-        }
-        searchFrom = pathStart;
-      }
-
-      // <<...>> 跳转
-      searchFrom = 0;
-      while (searchFrom < line.text.length) {
-        const idx = line.text.indexOf('<<', searchFrom);
-        if (idx === -1) break;
-        const endIdx = line.text.indexOf('>>', idx);
-        const commaIdx = line.text.indexOf(',', idx + 2);
-        if (endIdx > idx + 2 && col >= idx + 2 && col <= (commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx)) {
-          const refEnd = commaIdx > idx && commaIdx < endIdx ? commaIdx : endIdx;
-          const linkPath = line.text.slice(idx + 2, refEnd).split('#')[0].trim();
-          if (linkPath && !linkPath.startsWith('http')) {
-            e.preventDefault();
-            const resolved = _normalizePath(linkPath.startsWith('/') ? linkPath : (baseDir + '/' + linkPath));
-            eventBus.emit('open-external-file', resolved);
-          }
-          return;
-        }
-        searchFrom = endIdx > idx ? endIdx : idx + 2;
-      }
+      _processLinkClick(e, view, this.decorations);
     }
   },
 });
@@ -299,7 +316,6 @@ async function asciidocCompletions(context) {
       const currentDir = currentPath
         ? currentPath.substring(0, currentPath.lastIndexOf('/'))
         : wsRoot;
-      const { linkIndex } = await import('../services/link-index.js');
 
       const options = allFiles
         .filter(abs => abs !== currentPath)
@@ -338,7 +354,6 @@ async function asciidocCompletions(context) {
       const currentDir = currentPath
         ? currentPath.substring(0, currentPath.lastIndexOf('/'))
         : wsRoot;
-      const { linkIndex } = await import('../services/link-index.js');
 
       const options = allFiles
         .filter(abs => abs !== currentPath)
@@ -443,8 +458,40 @@ const keymapCompartment = new Compartment();
 const vimCompartment = new Compartment();
 const languageCompartment = new Compartment();
 const completionCompartment = new Compartment();
+const baseKeymapCompartment = new Compartment();
+const phrasesCompartment = new Compartment();
+
+/** 构建 CodeMirror 翻译短语（搜索面板等内置 UI 标签） */
+function buildCmPhrases() {
+  return {
+    "Find": t('search.find'),
+    "Replace": t('search.replace'),
+    "next": t('search.next'),
+    "previous": t('search.prev'),
+    "all": t('search.all'),
+    "match case": t('search.caseSensitive'),
+    "regexp": t('search.regex'),
+    "by word": t('search.byWord'),
+    "replace": t('search.replace'),
+    "replace all": t('search.replaceAll'),
+    "close": t('search.close'),
+  };
+}
 
 // 当前格式 ID（供模块级函数访问）
+
+function _buildBaseKeymap(vimEnabled) {
+  const base = vimEnabled
+    ? standardKeymap.filter(b => !['Enter', 'Backspace', 'Delete'].includes(b.key))
+    : standardKeymap;
+  return [
+    ...base,
+    ...searchKeymap.filter(b => b.key !== 'Mod-g' && (!vimEnabled || !['Mod-f', 'Mod-b'].includes(b.key))),
+    ...closeBracketsKeymap,
+    ...completionKeymap,
+    indentWithTab,
+  ];
+}
 let _currentFormatId = null;
 
 class EditorPane extends LitElement {
@@ -503,7 +550,7 @@ class EditorPane extends LitElement {
     /* Vim Ex 命令面板 */
     .cm-editor .cm-vim-panel {
       background: var(--bg-3);
-      border-top: 2px solid var(--color-primary);
+      border-top: 2px solid var(--accent);
       padding: 4px 12px;
       font-family: var(--font-mono);
       font-size: 13px;
@@ -514,6 +561,55 @@ class EditorPane extends LitElement {
       caret-color: var(--text-1);
       font-family: var(--font-mono);
       font-size: 13px;
+    }
+    /* CodeMirror 搜索/替换面板 */
+    .cm-editor .cm-panel.cm-search {
+      background: var(--bg-3);
+      border-top: 2px solid var(--accent);
+      padding: 6px 8px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-1);
+    }
+    .cm-editor .cm-panel.cm-search .cm-textfield {
+      padding: 4px 6px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      outline: none;
+    }
+    .cm-editor .cm-panel.cm-search .cm-textfield:focus {
+      border-color: var(--accent);
+    }
+    .cm-editor .cm-panel.cm-search .cm-button {
+      padding: 3px 8px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .cm-editor .cm-panel.cm-search .cm-button:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .cm-editor .cm-panel.cm-search label {
+      color: var(--text-3);
+      font-size: 12px;
+    }
+    .cm-editor .cm-panel.cm-search [name=close] {
+      color: var(--text-3);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .cm-editor .cm-panel.cm-search [name=close]:hover {
+      color: var(--text-1);
     }
   `;
 
@@ -526,7 +622,7 @@ class EditorPane extends LitElement {
     this._handlers = {};
     this._autoSaveTimer = null;
     this._fontSize = 14;
-    this._autoSaveDelay = 3000;
+    this._autoSaveDelay = 0;
     this._fileMtime = null;
     this._untitledCounter = 0;
     this._ignoreScroll = false;
@@ -541,7 +637,7 @@ class EditorPane extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._handlers = {
-      'file-opened': ({ path, content }) => this._openFile(path, content),
+      'file-opened': ({ path, content, binary }) => this._openFile(path, content, binary),
       'save-file': () => this._saveFile(),
       'theme-changed': (theme) => this._setTheme(theme),
       'ai-insert-text': (text) => this._insertText(text),
@@ -586,15 +682,28 @@ class EditorPane extends LitElement {
       'open-external-file': (path) => this._openExternalFile(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
       'view-mode-changed': (mode) => {
+        this._viewMode = mode;
         this._previewVisible = mode === 'split';
         // 编辑器从隐藏恢复显示时刷新 CodeMirror
         if (mode !== 'preview' && this._view) {
           requestAnimationFrame(() => this._view.requestMeasure());
         }
       },
+      'set-auto-save': (interval) => {
+        this._autoSaveDelay = (interval || 0) * 1000;
+        if (this._autoSaveDelay <= 0) { clearTimeout(this._autoSaveTimer); this._autoSaveTimer = null; }
+      },
       'workspace-opened': () => { _adocFileCache = null; },
       'set-vim-mode': ({ enabled, escapeSeq }) => this._applyVimMode(enabled, escapeSeq),
+      'language-changed': () => {
+        if (this._view) {
+          this._view.dispatch({
+            effects: phrasesCompartment.reconfigure(EditorState.phrases.of(buildCmPhrases())),
+          });
+        }
+      },
       'toggle-vim-mode': () => this._toggleVimMode(),
+      'set-vim-submode': (mode) => this._setVimSubmode(mode),
       'file-saved': () => { _adocFileCache = null; },
       'restore-editor-state': ({ scrollTop, cursorPos }) => {
         if (!this._view) return;
@@ -667,18 +776,14 @@ class EditorPane extends LitElement {
           rectangularSelection(),
           completionCompartment.of(autocompletion({ override: [asciidocCompletions] })),
           search(),
+          phrasesCompartment.of(EditorState.phrases.of(buildCmPhrases())),
           includeLinkPlugin,
           wrapCompartment.of([]),
+          // 标准 + 补全键位映射（vim/自定义快捷键优先拦截）
+          baseKeymapCompartment.of(keymap.of(_buildBaseKeymap(false))),
           vimCompartment.of([]),
           // 自定义快捷键（放在标准 keymap 之前，可覆盖标准绑定）
           keymapCompartment.of(keymap.of([])),
-          keymap.of([
-            ...standardKeymap,
-            ...searchKeymap.filter(b => b.key !== 'Mod-g'),
-            ...closeBracketsKeymap,
-            ...completionKeymap,
-            indentWithTab,
-          ]),
           languageCompartment.of(StreamLanguage.define(asciidocSyntax())),
           syntaxHighlighting(defaultHighlightStyle),
           themeCompartment.of([]),
@@ -690,8 +795,8 @@ class EditorPane extends LitElement {
                 editorState.updateContent(statePath, content);
               }
               eventBus.emit('content-changed', content);
-              // 自动保存（仅对已保存到磁盘的文件）
-              if (this._currentPath && !this._currentPath.startsWith('__untitled_')) {
+              // 自动保存（仅对已保存到磁盘的文件，且未禁用）
+              if (this._currentPath && !this._currentPath.startsWith('__untitled_') && this._autoSaveDelay > 0) {
                 clearTimeout(this._autoSaveTimer);
                 this._autoSaveTimer = setTimeout(() => this._saveFile(), this._autoSaveDelay);
               }
@@ -745,17 +850,15 @@ class EditorPane extends LitElement {
 
   async _loadConfig() {
     try {
-      const { loadEditorConfig } = await import('../services/config-service.js');
       const config = await loadEditorConfig();
       this._fontSize = config.font_size;
       this._setFontSize(config.font_size);
       if (config.word_wrap) this._toggleWrap();
-      if (config.auto_save_interval > 0) this._autoSaveDelay = config.auto_save_interval * 1000;
+      this._autoSaveDelay = (config.auto_save_interval || 0) * 1000;
       if (config.vim_mode) this._applyVimMode(true, config.vim_escape_seq || 'jk');
     } catch (e) { /* 使用默认值 */ }
     // 从快捷键注册中心加载自定义快捷键
     try {
-      const { shortcutRegistry } = await import('../services/shortcut-registry.js');
       this._applyShortcutKeymap(shortcutRegistry);
     } catch (_) {}
   }
@@ -799,7 +902,6 @@ class EditorPane extends LitElement {
     this._applyVimMode(newState, this._vimEscapeSeq || 'jk');
     // 持久化到配置
     try {
-      const { saveEditorConfig, loadEditorConfig } = await import('../services/config-service.js');
       const ed = await loadEditorConfig();
       ed.vim_mode = newState;
       ed.vim_escape_seq = this._vimEscapeSeq || 'jk';
@@ -869,10 +971,29 @@ class EditorPane extends LitElement {
       this._lastVimMode = '';
       eventBus.emit('vim-mode-changed', '');
     }
+    // vim 模式下过滤 Enter/Backspace/Delete，避免标准键位在 normal 模式直接修改内容
+    this._view.dispatch({
+      effects: baseKeymapCompartment.reconfigure(keymap.of(_buildBaseKeymap(enabled))),
+    });
     // vim 状态变更后刷新自定义快捷键（Ctrl-B/Ctrl-F 绑定取决于 vim 开关）
-    import('../services/shortcut-registry.js').then(({ shortcutRegistry }) => {
-      this._applyShortcutKeymap(shortcutRegistry);
-    }).catch(() => {});
+    this._applyShortcutKeymap(shortcutRegistry);
+  }
+
+  /** 通过 Vim.handleKey 切换 Vim 子模式 */
+  _setVimSubmode(mode) {
+    if (!this._view || !this._vimEnabled) return;
+    const cm = getCM(this._view);
+    if (!cm) return;
+    if (!cm.state?.vim) return;
+    if (mode === 'normal') {
+      Vim.handleKey(cm, '<Esc>');
+    } else if (mode === 'insert') {
+      Vim.handleKey(cm, '<Esc>');
+      Vim.handleKey(cm, 'i');
+    } else if (mode === 'visual') {
+      Vim.handleKey(cm, '<Esc>');
+      Vim.handleKey(cm, 'v');
+    }
   }
 
   // ─── 格式感知的标记操作辅助方法 ───
@@ -1049,12 +1170,24 @@ class EditorPane extends LitElement {
     this._updatingFromExternal = false;
   }
 
-  async _openFile(path, content) {
+  async _openFile(path, content, binary) {
     clearTimeout(this._autoSaveTimer);
     this._currentPath = path;
+    // 同时支持显式 binary 标志和扩展名检测（tab 切换不带 binary 标志）
+    this._isBinary = !!(binary || isBinaryFile(path));
+    // 二进制文件：自动切预览模式（通过 set-view-mode 触发 app-shell 布局更新）
+    if (this._isBinary) {
+      if (this._viewModeBeforeBinary == null) {
+        this._viewModeBeforeBinary = this._viewMode || 'split';
+      }
+      eventBus.emit('set-view-mode', 'preview');
+    } else if (this._viewModeBeforeBinary != null) {
+      eventBus.emit('set-view-mode', this._viewModeBeforeBinary);
+      this._viewModeBeforeBinary = null;
+    }
+    this._updateFormat(path);
     this._setEditorContent(content);
     eventBus.emit('content-changed', content);
-    this._updateFormat(path);
     // 记录文件 mtime 用于外部修改检测
     this._fileMtime = null;
     if (path && !path.startsWith('__untitled_')) {
@@ -1071,14 +1204,12 @@ class EditorPane extends LitElement {
       editorState.openFile(path, content);
       eventBus.emit('file-opened', { path, content });
       // 链接跳转时自动显示反向链接面板（等索引就绪）
-      const { linkIndex } = await import('../services/link-index.js');
       if (linkIndex.ready) await linkIndex.ready;
       const bls = await linkIndex.getBacklinks(path);
       if (bls.length > 0) {
         eventBus.emit('show-backlinks');
       }
       // 记录最近文件
-      const { addRecentFile } = await import('../services/config-service.js');
       addRecentFile(path, editorState.workspaceRoot || undefined).catch(() => {});
     } catch (e) {
       console.error('打开文件失败:', e);
@@ -1110,6 +1241,7 @@ class EditorPane extends LitElement {
   }
 
   async _saveFile() {
+    if (this._isBinary) return;
     if (!this._view) return;
     const content = this._view.state.doc.toString();
 
@@ -1122,8 +1254,7 @@ class EditorPane extends LitElement {
         const defaultName = `${name}.${ext}`;
         const savePath = await pickSaveFile(dir, defaultName);
         if (!savePath) return;
-        await writeFile(savePath, content);
-        if (!savePath) return;
+        this._saving = true;
         await writeFile(savePath, content);
         // 记住旧路径用于清理 draft
         const oldPath = this._currentPath;
@@ -1138,19 +1269,24 @@ class EditorPane extends LitElement {
         if (editorState.workspaceRoot) eventBus.emit('workspace-opened', editorState.workspaceRoot);
         this._cleanupDraft(oldPath);
         this._fileMtime = await getFileMtime(savePath).catch(() => null);
+        this._saving = false;
       } catch (e) {
+        this._saving = false;
         console.error('保存失败:', e);
       }
       return;
     }
 
     try {
+      this._saving = true;
       await writeFile(this._currentPath, content);
       editorState.markSaved(this._currentPath);
       eventBus.emit('file-saved', { path: this._currentPath, content });
       this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
+      this._saving = false;
       this._cleanupDraft();
     } catch (e) {
+      this._saving = false;
       console.error('保存失败:', e);
     }
   }
@@ -1161,7 +1297,6 @@ class EditorPane extends LitElement {
     if (extraPath) paths.add(extraPath);
     if (!paths.size) return;
     try {
-      const { loadWorkspaceState, saveWorkspaceState } = await import('../services/config-service.js');
       const ws = editorState.workspaceRoot;
       if (!ws) return;
       const wsState = await loadWorkspaceState(ws);
@@ -1251,6 +1386,7 @@ class EditorPane extends LitElement {
 
   _onFileClosed(path) {
     if (this._currentPath === path) {
+      this._isBinary = false;
       const active = editorState.getActiveFile();
       if (active) {
         this._openFile(active.path, active.content);
@@ -1265,6 +1401,7 @@ class EditorPane extends LitElement {
   async _checkExternalChange() {
     if (!this._currentPath || this._currentPath.startsWith('__untitled_')) return;
     if (!this._fileMtime) return;
+    if (this._saving) return;
     try {
       const mtime = await getFileMtime(this._currentPath);
       if (mtime !== this._fileMtime) {

@@ -2,6 +2,7 @@
 
 import { pluginRegistry } from './plugin-registry.js';
 import { eventBus } from './event-bus.js';
+import { listDirectory, readFile, writeFile } from './file-service.js';
 
 class PluginLoader {
   constructor() {
@@ -15,7 +16,6 @@ class PluginLoader {
     if (!workspaceRoot) return;
 
     try {
-      const { listDirectory, readFile } = await import('./file-service.js');
       const pluginDir = workspaceRoot + '/.docforge/plugins';
       const entries = await listDirectory(pluginDir);
       const dirs = (entries || []).filter(e => e.is_dir);
@@ -67,7 +67,6 @@ class PluginLoader {
 
   async _loadState(workspaceRoot) {
     try {
-      const { readFile } = await import('./file-service.js');
       const stateJson = await readFile(workspaceRoot + '/.docforge/plugins/_state.json');
       return JSON.parse(stateJson);
     } catch (_) {
@@ -83,7 +82,6 @@ class PluginLoader {
       state[pluginId] = false;
     }
     try {
-      const { writeFile } = await import('./file-service.js');
       await writeFile(workspaceRoot + '/.docforge/plugins/_state.json', JSON.stringify(state, null, 2));
     } catch (_) {}
   }

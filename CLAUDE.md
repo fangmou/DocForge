@@ -24,7 +24,9 @@
 - `make dev` — 启动开发模式（热重载）
 - `make linux` / `windows` / `mac` — 快速编译可执行文件（开发测试）
 - `make pkg` / `pkg-linux` / `pkg-windows` / `pkg-mac` — 打安装包（发布）
-- `make check` — 检查 Rust 编译
+- `make check` — lint + 全部测试（交付前必跑）
+- `make lint` — 仅 Rust lint 检查
+- `make test` — 运行全部测试（Rust + JS）
 
 ## 编码约定
 
@@ -35,6 +37,12 @@
 - **路径分隔符统一 `/`**: Rust 后端所有返回给前端的路径必须经过 `utils::normalize_path()` 转换（`\` → `/`），前端代码统一用 `/` 做路径操作；`link_db.rs` 已有自己的 `normalize_path` 处理 `.`/`..`，需用 `use crate::utils::normalize_path as to_forward_slash` 避免冲突
 - **WSL 路径转换**: 配置中的文件路径（如 `output_dir`、`fonts_dir`）在传给外部命令前必须通过 `resolve_config_path()` 解析，该函数在 Linux/WSL 上自动将 Windows 盘符路径转为 `/mnt/...`，Windows 原生上仅做分隔符标准化
 - **禁止原生弹框**: 禁止使用 `prompt()` / `confirm()`（WebKit 下显示调试标题，体验差）。确认类用 `import { showConfirm } from '../services/dialog.js'`（返回 `Promise<boolean>`）；输入类用组件内 `_showInputDialog()` 模式
+
+## 测试规则
+
+- **交付前验证**: 修改文件后必须运行 `make lint` 确保 lint 通过；涉及功能变更时运行 `make check`（lint + 测试）。验证失败必须修复所有错误后再交付
+- **同步更新测试**: 新增/修改功能时，对应的测试用例必须同步更新。Rust 测试在源文件底部添加 `#[cfg(test)] mod tests`，JS 测试在 `src/services/__tests__/` 下创建或更新 `<模块>.test.js`
+- **测试覆盖范围**: 优先覆盖纯函数和核心业务逻辑（路径处理、格式解析、标签操作、编辑器状态、链接索引），组件 UI 测试不做要求
 
 ## 文档维护规则
 

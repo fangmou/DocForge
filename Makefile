@@ -1,4 +1,4 @@
-.PHONY: dev check lint \
+.PHONY: dev check lint test test-rust test-js test-watch \
        linux windows mac \
        pkg pkg-linux pkg-windows pkg-mac \
        clean info
@@ -17,11 +17,23 @@ WINDOWS_TARGET := x86_64-pc-windows-gnu
 dev:
 	WEBKIT_DISABLE_DMABUF_RENDERER=1 $(TAURI_CLI) dev
 
-check:
-	cd $(SRC_DIR) && cargo check
+check: lint test
 
 lint:
 	cd $(SRC_DIR) && cargo clippy -- -W clippy::all
+
+# ========== 测试 ==========
+
+test: test-rust test-js
+
+test-rust:
+	cd $(SRC_DIR) && cargo test
+
+test-js:
+	npx vitest run
+
+test-watch:
+	npx vitest
 
 # ========== 快速编译（开发测试）==========
 
@@ -79,7 +91,11 @@ info:
 	@echo ""
 	@echo "日常:"
 	@echo "  make dev          开发模式（热重载）"
-	@echo "  make check        检查编译"
+	@echo "  make check        lint + 全部测试（交付前必跑）"
+	@echo "  make lint         仅 Rust lint 检查"
+	@echo "  make test         运行全部测试（Rust + JS）"
+	@echo "  make test-rust    仅 Rust 测试"
+	@echo "  make test-js      仅前端测试"
 	@echo "  make linux        快速编译 Linux 可执行文件"
 	@echo "  make windows      快速编译 Windows 可执行文件"
 	@echo "  make mac          快速编译 macOS 可执行文件"

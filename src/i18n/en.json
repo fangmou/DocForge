@@ -11,6 +11,9 @@
   "toolbar.importDocx": "Import Word",
   "toolbar.save": "Save",
   "toolbar.togglePreview": "Toggle Preview",
+  "toolbar.viewEdit": "Edit View",
+  "toolbar.viewSplit": "Split View",
+  "toolbar.viewPreview": "Preview View",
   "toolbar.toggleWordWrap": "Word Wrap",
   "toolbar.toggleOutline": "Outline",
   "toolbar.toggleSearch": "Search",
@@ -51,6 +54,7 @@
 
   "sidebar.empty": "Click 📂 to open a workspace",
   "sidebar.recent": "Recent Files",
+  "sidebar.fileDeleted": "File not found or has been moved. Removed from recent list.",
   "sidebar.files": "Files",
   "sidebar.refresh": "Refresh",
   "sidebar.removeWorkspace": "Remove this workspace",
@@ -305,6 +309,12 @@
   "search.replacePlaceholder": "Replace with...",
   "search.replaceAll": "Replace All",
   "search.replaceOne": "Replace",
+  "search.find": "Find",
+  "search.next": "Next",
+  "search.prev": "Previous",
+  "search.all": "All",
+  "search.byWord": "By word",
+  "search.close": "Close",
 
   "exportHistory.title": "Export History",
   "exportHistory.empty": "No export history",
@@ -367,6 +377,20 @@
   "shortcuts.markupLink": "Insert Link",
   "shortcuts.alignTable": "Align Table",
   "shortcuts.toggleVimMode": "Toggle Vim Mode",
+  "shortcuts.quickSwitcher": "Quick Switcher (Ctrl+Tab)",
+  "shortcuts.fileQuickOpen": "Quick Open File",
+  "shortcuts.workspaceSwitcher": "Switch Workspace",
+
+  "quickSwitcher.hintCtrlTab": "Tab to switch, release Ctrl to activate, or click",
+  "quickSwitcher.openFiles": "Open Files",
+  "quickSwitcher.views": "Views & Tools",
+  "quickSwitcher.noOpenFiles": "No open files",
+  "quickSwitcher.filePlaceholder": "Search files by name...",
+  "quickSwitcher.recent": "Recent",
+  "quickSwitcher.allFiles": "All Files",
+  "quickSwitcher.noResults": "No matching files",
+  "quickSwitcher.wsPlaceholder": "Search workspaces...",
+  "quickSwitcher.noWorkspaces": "No recent workspaces",
 
   "statusBar.viewSplit": "Split",
   "statusBar.viewEdit": "Edit",
@@ -375,5 +399,11 @@
   "settings.editor.defaultViewMode": "Default View Mode",
   "settings.editor.defaultViewModeSplit": "Split (Edit + Preview)",
   "settings.editor.defaultViewModeEdit": "Edit Only",
-  "settings.editor.defaultViewModePreview": "Preview Only"
+  "settings.editor.defaultViewModePreview": "Preview Only",
+
+  "statusBar.vimNormal": "Vi Normal",
+  "statusBar.vimInsert": "Vi Insert",
+  "statusBar.vimVisual": "Vi Visual",
+  "statusBar.vimOther": "Vi Other",
+  "statusBar.cmNormal": "Standard Edit"
 }

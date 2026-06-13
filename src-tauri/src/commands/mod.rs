@@ -5,3 +5,5 @@ pub mod export;
 pub mod config;
 pub mod link;
 pub mod plugin;
+#[cfg(feature = "devtools")]
+pub mod dev;

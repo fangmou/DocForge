@@ -4,6 +4,10 @@ export async function readFile(path) {
   return invoke()('read_file', { path });
 }
 
+export async function readBinaryFile(path) {
+  return invoke()('read_binary_file', { path });
+}
+
 export async function writeFile(path, content) {
   return invoke()('write_file', { path, content });
 }

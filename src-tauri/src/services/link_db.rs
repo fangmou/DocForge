@@ -1,3 +1,4 @@
+use crate::services::document_format::{self, RE_BLOCK_DELIM};
 use crate::utils::normalize_path as to_forward_slash;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -15,13 +16,6 @@ static RE_ANGLE: Lazy<Regex> = Lazy::new(|| {
 static RE_INCLUDE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"include::([^\[]+)\[").unwrap()
 });
-static RE_HEADING: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(={1,6})\s+(.+)").unwrap()
-});
-/// 块分隔符：4 个及以上相同字符（表格用 |=== 单独处理）
-static RE_BLOCK_DELIM: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(-{4,}|\.{4,}|_{4,}|\*{4,}|/{4,}|={4,}|`{3,}|~{3,})\s*$").unwrap()
-});
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LinkEntry {
@@ -31,12 +25,7 @@ pub struct LinkEntry {
     pub line: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct HeadingEntry {
-    pub line: usize,
-    pub level: usize,
-    pub text: String,
-}
+pub use document_format::HeadingEntry;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TagCount {
@@ -388,67 +377,46 @@ pub fn parse_file(
         .map(|p| to_forward_slash(&p.to_string_lossy()))
         .unwrap_or_default();
 
-    let mut title = String::new();
-    let mut links = Vec::new();
-    let mut keywords = Vec::new();
-    let mut headings = Vec::new();
+    // 通过 DocumentFormat trait 提取标签/标题/大纲
+    let fmt = document_format::detect_format(file_path);
+    let title = fmt
+        .as_ref()
+        .and_then(|f| f.extract_title(content))
+        .unwrap_or_else(|| {
+            std::path::Path::new(file_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("untitled")
+                .to_string()
+        });
+    let keywords = fmt
+        .as_ref()
+        .map(|f| f.extract_tags(content))
+        .unwrap_or_default();
+    let headings = fmt
+        .as_ref()
+        .map(|f| f.extract_headings(content))
+        .unwrap_or_default();
 
-    // 块上下文状态
+    // 链接解析（AsciiDoc 专有）
+    let mut links = Vec::new();
     let mut in_block = false;
     let mut in_table = false;
 
     for (i, line) in content.lines().enumerate() {
         let trimmed = line.trim();
-
-        // --- 块边界检测 ---
-        // 表格 |===（单独处理，不和其他块共用状态）
         if trimmed == "|===" {
             in_table = !in_table;
             continue;
         }
-        // 通用块分隔符（代码块 ----、示例块 ====、说明块 **** 等）
         if RE_BLOCK_DELIM.is_match(trimmed) {
             in_block = !in_block;
             continue;
         }
-        // 块内跳过标题和链接解析
         if in_table || in_block {
             continue;
         }
 
-        // 标题（取第一个 = 开头的）
-        if title.is_empty() {
-            if let Some(rest) = trimmed.strip_prefix("= ") {
-                let t = rest.trim();
-                if !t.is_empty() {
-                    title = t.to_string();
-                }
-            }
-        }
-
-        // 关键词
-        if let Some(rest) = trimmed.strip_prefix(':') {
-            if let Some(val) = rest.strip_prefix("keywords:") {
-                keywords = val
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-            }
-        }
-
-        // 大纲标题（仅 = 语法，. 不是大纲标题）
-        if let Some(cap) = RE_HEADING.captures(line) {
-            let level = cap.get(1).unwrap().as_str().len();
-            let text = cap.get(2).unwrap().as_str().trim().to_string();
-            headings.push(HeadingEntry {
-                line: i + 1,
-                level,
-                text,
-            });
-        }
-
-        // 链接
         for cap in RE_XREF.captures_iter(line) {
             if let Some(target) = cap.get(1) {
                 let ts = target.as_str();
@@ -489,14 +457,6 @@ pub fn parse_file(
         }
     }
 
-    if title.is_empty() {
-        title = std::path::Path::new(file_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("untitled")
-            .to_string();
-    }
-
     FileParseResult {
         path: file_path.to_string(),
         title,
@@ -507,66 +467,29 @@ pub fn parse_file(
 }
 
 /// 追加标签到文件内容，返回修改后的内容
-pub fn add_tag_to_content(content: &str, tag: &str) -> String {
+pub fn add_tag_to_content(content: &str, tag: &str, file_path: &str) -> String {
     let tag = tag.trim();
     if tag.is_empty() {
         return content.to_string();
     }
-    let lines: Vec<&str> = content.lines().collect();
-    let mut kw_idx: Option<usize> = None;
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim().to_lowercase().starts_with(":keywords:") {
-            kw_idx = Some(i);
-            break;
-        }
-        if i > 0 && line.trim().is_empty() {
-            break;
-        }
-    }
-
-    let mut result: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-    if let Some(idx) = kw_idx {
-        let existing = result[idx]
-            .trim()
-            .trim_start_matches(":keywords:")
-            .trim()
-            .to_string();
-        let mut tags: Vec<String> = if existing.is_empty() {
-            Vec::new()
-        } else {
-            existing
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        };
-        if !tags.contains(&tag.to_string()) {
-            tags.push(tag.to_string());
-        }
-        result[idx] = format!(":keywords: {}", tags.join(", "));
+    if let Some(fmt) = document_format::detect_format(file_path) {
+        fmt.write_tag(content, tag)
     } else {
-        // 在标题行后插入；无标题行时插入文件开头
-        let mut insert_at = 0;
-        for (i, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-            // 检测 AsciiDoc 标题（= ）和 Markdown 标题（# ）
-            if i == 0 && (trimmed.starts_with("= ") || trimmed.starts_with("# ")) {
-                insert_at = i + 1;
-                break;
-            }
-            // 跳过已有的头部属性行（:xxx:），在其后插入
-            let prev = if i > 0 { lines[i - 1].trim() } else { "" };
-            if i == 0 || prev.starts_with('=') || prev.starts_with('#') || prev.starts_with(':') {
-                if trimmed.starts_with(':') {
-                    insert_at = i + 1;
-                    continue;
-                }
-            }
-            break;
-        }
-        result.insert(insert_at, format!(":keywords: {}", tag));
+        content.to_string()
     }
-    result.join("\n")
+}
+
+/// 从文件内容中移除标签，返回修改后的内容
+pub fn remove_tag_from_content(content: &str, tag: &str, file_path: &str) -> String {
+    let tag = tag.trim();
+    if tag.is_empty() {
+        return content.to_string();
+    }
+    if let Some(fmt) = document_format::detect_format(file_path) {
+        fmt.remove_tag(content, tag)
+    } else {
+        content.to_string()
+    }
 }
 
 fn resolve_path(dir: &str, workspace_root: &str, target: &str) -> String {
@@ -635,10 +558,360 @@ pub fn collect_adoc_files<'a>(
             } else if name.ends_with(".adoc")
                 || name.ends_with(".asciidoc")
                 || name.ends_with(".txt")
+                || name.ends_with(".md")
+                || name.ends_with(".markdown")
             {
                 result.push(path);
             }
         }
         Ok(result)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── normalize_path（link_db 内部版本） ───
+
+    #[test]
+    fn normalize_path_dots() {
+        assert_eq!(normalize_path("/a/b/../c"), "/a/c");
+        assert_eq!(normalize_path("/a/./b"), "/a/b");
+        assert_eq!(normalize_path("a/b/../../c"), "c");
+        assert_eq!(normalize_path("/a/b/c/../../d"), "/a/d");
+    }
+
+    #[test]
+    fn normalize_path_trailing_dots() {
+        assert_eq!(normalize_path("/a/b/c/.."), "/a/b");
+    }
+
+    #[test]
+    fn normalize_path_consecutive_slashes() {
+        assert_eq!(normalize_path("/a//b///c"), "/a/b/c");
+    }
+
+    // ─── parse_file ───
+
+    #[test]
+    fn parse_file_extracts_xref_links() {
+        let content = "= My Doc\n\nSee xref:other.adoc[Other] for details.\nAlso xref:chapter.adoc#section[Section].";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert_eq!(result.links.len(), 2);
+        assert_eq!(result.links[0].target, "/workspace/docs/other.adoc");
+        assert_eq!(result.links[1].anchor, Some("section".into()));
+    }
+
+    #[test]
+    fn parse_file_extracts_angle_links() {
+        let content = "= Doc\n\nSee <<other.adoc>> and <<chapter,Chapter>>.";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert_eq!(result.links.len(), 2);
+    }
+
+    #[test]
+    fn parse_file_extracts_include() {
+        let content = "= Doc\n\ninclude::shared.adoc[]";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert_eq!(result.links.len(), 1);
+        assert_eq!(result.links[0].target, "/workspace/docs/shared.adoc");
+    }
+
+    #[test]
+    fn parse_file_skips_links_in_blocks() {
+        let content = "= Doc\n\n----\nxref:other.adoc[Link inside code block]\n----\n\nxref:real.adoc[Real link]";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert_eq!(result.links.len(), 1);
+        assert_eq!(result.links[0].target, "/workspace/docs/real.adoc");
+    }
+
+    #[test]
+    fn parse_file_skips_http_links() {
+        let content = "= Doc\n\nxref:https://example.com[External]";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert!(result.links.is_empty());
+    }
+
+    #[test]
+    fn parse_file_skips_hash_only_anchors() {
+        let content = "= Doc\n\nxref:#section[Internal anchor]";
+        let result = parse_file("/workspace/docs/index.adoc", content, "/workspace");
+        assert!(result.links.is_empty());
+    }
+
+    #[test]
+    fn parse_file_extracts_title_from_adoc() {
+        let content = "= My Great Document\n\nBody text";
+        let result = parse_file("/ws/test.adoc", content, "/ws");
+        assert_eq!(result.title, "My Great Document");
+    }
+
+    #[test]
+    fn parse_file_falls_back_to_filename() {
+        let content = "No title here\nJust text";
+        let result = parse_file("/ws/my-file.adoc", content, "/ws");
+        assert_eq!(result.title, "my-file");
+    }
+
+    #[test]
+    fn parse_file_extracts_tags() {
+        let content = "= Title\n:keywords: alpha, beta\n\nBody";
+        let result = parse_file("/ws/test.adoc", content, "/ws");
+        assert_eq!(result.keywords, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn parse_file_extracts_headings() {
+        let content = "= Title\n\n== Section 1\n\n=== Sub\n\n== Section 2";
+        let result = parse_file("/ws/test.adoc", content, "/ws");
+        // "= Title" also matches as level 1 heading
+        assert_eq!(result.headings.len(), 4);
+        assert_eq!(result.headings[0].text, "Title");
+        assert_eq!(result.headings[1].text, "Section 1");
+    }
+
+    #[test]
+    fn parse_file_absolute_target() {
+        let content = "= Doc\n\nxref:/abs/path.adoc[Absolute]";
+        let result = parse_file("/ws/docs/index.adoc", content, "/ws");
+        // 绝对路径不在 workspace 内，被拉回 workspace 根
+        assert_eq!(result.links[0].target, "/ws/abs/path.adoc");
+    }
+
+    // ─── resolve_path ───
+
+    #[test]
+    fn resolve_path_relative() {
+        assert_eq!(
+            resolve_path("/workspace/docs", "/workspace", "other.adoc"),
+            "/workspace/docs/other.adoc"
+        );
+    }
+
+    #[test]
+    fn resolve_path_absolute() {
+        // 绝对路径不在 workspace 内时，会被拉回 workspace 根下
+        assert_eq!(
+            resolve_path("/workspace/docs", "/workspace", "/abs/path.adoc"),
+            "/workspace/abs/path.adoc"
+        );
+    }
+
+    // ─── LinkDb 生命周期 ───
+
+    #[test]
+    fn link_db_new_creates_tables() {
+        let db = LinkDb::new();
+        assert!(db.is_ok());
+    }
+
+    #[test]
+    fn link_db_rebuild_and_query() {
+        let db = LinkDb::new().unwrap();
+        let data = vec![FileParseResult {
+            path: "/ws/a.adoc".into(),
+            title: "A".into(),
+            links: vec![LinkEntry {
+                source: "/ws/a.adoc".into(),
+                target: "/ws/b.adoc".into(),
+                anchor: None,
+                line: 3,
+            }],
+            keywords: vec!["tag1".into()],
+            headings: vec![HeadingEntry {
+                line: 1,
+                level: 1,
+                text: "A".into(),
+            }],
+        }];
+        db.rebuild(data);
+
+        // 反向链接
+        let backlinks = db.get_backlinks("/ws/b.adoc");
+        assert_eq!(backlinks.len(), 1);
+        assert_eq!(backlinks[0].source, "/ws/a.adoc");
+
+        // 正向链接
+        let forward = db.get_forward_links("/ws/a.adoc");
+        assert_eq!(forward.len(), 1);
+
+        // 标题
+        let title = db.get_title("/ws/a.adoc");
+        assert_eq!(title, Some("A".into()));
+
+        // 标签
+        let tags = db.get_all_tags();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].tag, "tag1");
+
+        // 大纲
+        let headings = db.get_headings("/ws/a.adoc");
+        assert_eq!(headings.len(), 1);
+        assert_eq!(headings[0].text, "A");
+
+        // 文件列表
+        let files = db.get_all_files();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "/ws/a.adoc");
+    }
+
+    #[test]
+    fn link_db_rebuild_clears_old_data() {
+        let db = LinkDb::new().unwrap();
+        // 先插入
+        db.rebuild(vec![FileParseResult {
+            path: "/ws/old.adoc".into(),
+            title: "Old".into(),
+            links: vec![],
+            keywords: vec![],
+            headings: vec![],
+        }]);
+        assert_eq!(db.get_all_files().len(), 1);
+
+        // 重建为空
+        db.rebuild(vec![]);
+        assert_eq!(db.get_all_files().len(), 0);
+        assert!(db.get_title("/ws/old.adoc").is_none());
+    }
+
+    #[test]
+    fn link_db_update_file_incremental() {
+        let db = LinkDb::new().unwrap();
+        let initial = FileParseResult {
+            path: "/ws/a.adoc".into(),
+            title: "A".into(),
+            links: vec![],
+            keywords: vec!["old".into()],
+            headings: vec![],
+        };
+        db.rebuild(vec![initial]);
+
+        let updated = FileParseResult {
+            path: "/ws/a.adoc".into(),
+            title: "A Updated".into(),
+            links: vec![LinkEntry {
+                source: "/ws/a.adoc".into(),
+                target: "/ws/b.adoc".into(),
+                anchor: None,
+                line: 5,
+            }],
+            keywords: vec!["new".into()],
+            headings: vec![HeadingEntry {
+                line: 1,
+                level: 1,
+                text: "A Updated".into(),
+            }],
+        };
+        db.update_file(&updated);
+
+        assert_eq!(db.get_title("/ws/a.adoc"), Some("A Updated".into()));
+        let tags = db.get_all_tags();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].tag, "new");
+        assert_eq!(db.get_forward_links("/ws/a.adoc").len(), 1);
+        assert_eq!(db.get_headings("/ws/a.adoc").len(), 1);
+    }
+
+    #[test]
+    fn link_db_tags_for_file() {
+        let db = LinkDb::new().unwrap();
+        db.rebuild(vec![FileParseResult {
+            path: "/ws/a.adoc".into(),
+            title: "A".into(),
+            links: vec![],
+            keywords: vec!["t1".into(), "t2".into()],
+            headings: vec![],
+        }]);
+        let tags = db.get_tags_for_file("/ws/a.adoc");
+        assert_eq!(tags.len(), 2);
+    }
+
+    #[test]
+    fn link_db_files_by_tag() {
+        let db = LinkDb::new().unwrap();
+        db.rebuild(vec![
+            FileParseResult {
+                path: "/ws/a.adoc".into(),
+                title: "A".into(),
+                links: vec![],
+                keywords: vec!["shared".into()],
+                headings: vec![],
+            },
+            FileParseResult {
+                path: "/ws/b.adoc".into(),
+                title: "B".into(),
+                links: vec![],
+                keywords: vec!["shared".into(), "unique".into()],
+                headings: vec![],
+            },
+        ]);
+        let files = db.get_files_by_tag("shared");
+        assert_eq!(files.len(), 2);
+        let unique = db.get_files_by_tag("unique");
+        assert_eq!(unique.len(), 1);
+    }
+
+    #[test]
+    fn link_db_graph_data() {
+        let db = LinkDb::new().unwrap();
+        db.rebuild(vec![
+            FileParseResult {
+                path: "/ws/a.adoc".into(),
+                title: "A".into(),
+                links: vec![LinkEntry {
+                    source: "/ws/a.adoc".into(),
+                    target: "/ws/b.adoc".into(),
+                    anchor: None,
+                    line: 3,
+                }],
+                keywords: vec![],
+                headings: vec![],
+            },
+            FileParseResult {
+                path: "/ws/b.adoc".into(),
+                title: "B".into(),
+                links: vec![],
+                keywords: vec![],
+                headings: vec![],
+            },
+        ]);
+        let graph = db.get_graph_data();
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.edges.len(), 1);
+        // a.adoc links out → link count = 1; b.adoc is linked to → link count = 1
+        let a_node = graph.nodes.iter().find(|n| n.id == "/ws/a.adoc").unwrap();
+        assert_eq!(a_node.links, 1);
+    }
+
+    // ─── add_tag_to_content / remove_tag_from_content ───
+
+    #[test]
+    fn add_tag_to_content_adoc() {
+        let content = "= Title\n\nBody";
+        let with_tag = add_tag_to_content(content, "test-tag", "doc.adoc");
+        assert!(with_tag.contains(":keywords: test-tag"));
+    }
+
+    #[test]
+    fn add_tag_to_content_md() {
+        let content = "# Title\n\nBody";
+        let with_tag = add_tag_to_content(content, "test-tag", "doc.md");
+        assert!(with_tag.contains("tags: [test-tag]"));
+    }
+
+    #[test]
+    fn add_tag_to_content_unknown_format_passthrough() {
+        let content = "Some text";
+        let result = add_tag_to_content(content, "tag", "doc.py");
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn remove_tag_roundtrip() {
+        let content = "= Title\n:keywords: tag1, tag2\n\nBody";
+        let without_tag = super::remove_tag_from_content(content, "tag1", "doc.adoc");
+        assert!(!without_tag.contains("tag1"));
+        assert!(without_tag.contains("tag2"));
+    }
 }

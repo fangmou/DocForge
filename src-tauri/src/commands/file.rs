@@ -1,4 +1,5 @@
 use crate::utils::normalize_path;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use std::path::Path;
 use tokio::fs;
@@ -16,6 +17,54 @@ pub async fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path)
         .await
         .map_err(|e| format!("读取文件失败: {}", e))
+}
+
+/// 读取二进制文件并返回 base64 编码 + 推断的 MIME 类型
+#[tauri::command]
+pub async fn read_binary_file(path: String) -> Result<BinaryFileData, String> {
+    let bytes = fs::read(&path)
+        .await
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let mime = infer_mime(&path);
+    let b64 = STANDARD.encode(&bytes);
+    Ok(BinaryFileData { base64: b64, mime })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BinaryFileData {
+    pub base64: String,
+    pub mime: String,
+}
+
+fn infer_mime(path: &str) -> String {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "tiff" | "tif" => "image/tiff",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "m4a" => "audio/mp4",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+    .into()
 }
 
 #[tauri::command]

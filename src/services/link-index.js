@@ -36,7 +36,7 @@ class LinkIndex {
   // 同步方法：补全代码在 .map() 循环中高频调用，不能 await
   getTitle(filePath) {
     return this._titleCache.get(filePath)
-      || filePath.split('/').pop().replace(/\.(adoc|asciidoc|txt)$/, '');
+      || filePath.split('/').pop().replace(/\.(adoc|asciidoc|txt|md|markdown)$/, '');
   }
 
   async getBacklinks(filePath) {
@@ -74,6 +74,10 @@ class LinkIndex {
 
   async addTagToFile(filePath, content, tag) {
     return invoke()('add_tag_to_file', { filePath, content, tag });
+  }
+
+  async removeTagFromFile(filePath, content, tag) {
+    return invoke()('remove_tag_from_file', { filePath, content, tag });
   }
 }
 

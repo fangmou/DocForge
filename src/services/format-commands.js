@@ -11,6 +11,42 @@
 
 const FORMAT_REGISTRY = new Map();
 
+// ─── 文件类别检测 ──────────────────────────────────────────────
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'tiff', 'tif']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma']);
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv']);
+const BINARY_EXTS = new Set([...IMAGE_EXTS, ...AUDIO_EXTS, ...VIDEO_EXTS, 'pdf']);
+
+/**
+ * 根据文件扩展名判断是否为二进制文件（不可作为文本编辑）
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isBinaryFile(filePath) {
+  if (!filePath) return false;
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return BINARY_EXTS.has(ext);
+}
+
+/**
+ * 根据文件路径返回预览类别
+ * @param {string} filePath
+ * @returns {'markup'|'svg'|'html'|'image'|'audio'|'video'|'pdf'|'text'|'unknown'}
+ */
+export function getFileCategory(filePath) {
+  if (!filePath) return 'unknown';
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'svg') return 'svg';
+  if (IMAGE_EXTS.has(ext)) return 'image';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (VIDEO_EXTS.has(ext)) return 'video';
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'html' || ext === 'htm') return 'html';
+  if (ext === 'adoc' || ext === 'asciidoc' || ext === 'md' || ext === 'markdown') return 'markup';
+  return 'text';
+}
+
 /**
  * 根据文件路径返回格式定义
  * @param {string} filePath

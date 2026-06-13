@@ -2,6 +2,7 @@ import { LitElement, html, css, svg } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
+import { getExportHistory, removeExportHistory, clearExportHistory } from '../services/config-service.js';
 
 const invoke = () => window.__TAURI__.core.invoke;
 
@@ -53,6 +54,7 @@ class ExportHistoryPanel extends LitElement {
     }
     .header .clear-btn:hover { color: var(--color-danger); }
     .header .close {
+      margin-left: auto;
       cursor: pointer;
       opacity: 0.5;
       color: var(--text-3);
@@ -169,7 +171,6 @@ class ExportHistoryPanel extends LitElement {
 
   async _load() {
     try {
-      const { getExportHistory } = await import('../services/config-service.js');
       this.records = await getExportHistory(editorState.workspaceRoot || undefined);
     } catch (_) {
       this.records = [];
@@ -190,7 +191,6 @@ class ExportHistoryPanel extends LitElement {
 
   async _remove(path) {
     try {
-      const { removeExportHistory } = await import('../services/config-service.js');
       await removeExportHistory(path, editorState.workspaceRoot || undefined);
       this.records = this.records.filter(r => r.path !== path);
     } catch (_) {}
@@ -198,7 +198,6 @@ class ExportHistoryPanel extends LitElement {
 
   async _clearAll() {
     try {
-      const { clearExportHistory } = await import('../services/config-service.js');
       await clearExportHistory(editorState.workspaceRoot || undefined);
       this.records = [];
     } catch (_) {}

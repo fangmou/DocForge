@@ -1,0 +1,88 @@
+= F6 多格式预览 — 实现决策记录
+
+== 方案
+
+按扩展名分类文件，预览面板按类别分发渲染：
+
+[cols="1,1,1"]
+|===
+| 类别 | 扩展名 | 预览方式
+
+| markup | adoc/md | Asciidoctor / Marked（原有逻辑）
+| svg | svg | `data:image/svg+xml` + `<img>`（编辑实时同步）
+| html | html/htm | `<iframe srcdoc sandbox>`
+| text | 其他文本 | `<pre><code>` 原样（HTML 转义）
+| image | png/jpg/gif/webp/... | Rust `read_binary_file` → base64 data URL + `<img>`
+| audio | mp3/wav/ogg/... | base64 data URL + `<audio>`
+| video | mp4/webm/... | base64 data URL + `<video>`
+| pdf | pdf | base64 data URL + `<iframe>`
+|===
+
+二进制文件打开时自动切 preview 模式，切回文本文件时恢复之前的视图模式。
+
+== 踩坑
+
+=== 1. `convertFileSrc` / asset 协议不可用
+
+**现象**：`convertFileSrc(path)` 返回 `asset://localhost/...`，WebKit 报 "The URL can't be shown"。
+
+**原因**：Tauri v2 的 asset 协议需要 `tauri-plugin-fs` 的 scope 配置（`fs:allow-read-file` 权限 + 路径范围）。项目未配置，且配置 scope 会限制可访问路径，不够灵活。
+
+**最终方案**：新增 Rust 命令 `read_binary_file`，读取二进制文件返回 `{ base64, mime }`，前端拼接 `data:{mime};base64,{data}` 作为 src。无协议依赖，无额外权限配置。
+
+**注意**：大文件（>10MB 视频）会因 base64 膨胀（+33%）导致内存和加载变慢。当前方案适合图片、音频等小文件；大视频文件如需支持，应改用流式方案或配置 asset 协议 scope。
+
+=== 2. 二进制文件检测不能依赖错误消息
+
+**现象**：sidebar 的 `_openFile` catch 里用 `msg.includes('valid UTF-8')` 检测二进制文件，从未匹配。
+
+**原因**：Tauri v2 IPC 的错误格式不确定（可能被包装为 Error 对象、可能消息文本不同），不可靠。
+
+**最终方案**：用扩展名前置判断（`isBinaryFile(path)`），在调用 `readFile` 之前就决定是否走二进制路径。扩展名列表集中在 `format-commands.js`，单一来源。
+
+=== 3. `view-mode-changed` 是输出不是输入
+
+**现象**：editor-pane 直接 emit `view-mode-changed: 'preview'`，app-shell 不响应，布局没变。
+
+**原因**：app-shell 的布局由 `_setViewMode()` 驱动，它监听 `set-view-mode` 事件。`view-mode-changed` 是 `_setViewMode()` 的输出事件，用于通知其他组件。搞反了输入输出。
+
+**正确做法**：emit `set-view-mode` → app-shell 更新布局 → 自动 emit `view-mode-changed` 通知下游。
+
+=== 4. tab 切换不带 binary 标志
+
+**现象**：从 tab-bar 切回二进制 tab，`binary` 参数为 `undefined`，视图模式恢复逻辑误判。
+
+**原因**：tab-bar 的 `_selectTab` 只发 `{ path, content }`，不知道文件是否二进制。
+
+**最终方案**：`_openFile` 里同时检查显式 `binary` 参数和扩展名（`isBinaryFile(path)`），两种来源合并判断。
+
+=== 5. `_normalizePath` 吞掉 Windows UNC 前缀
+
+**现象**：Windows 上 Ctrl+Click `include::` 路径报"系统找不到指定的路径"。
+
+**原因**：`_normalizePath` 对所有路径统一加 `/` 前缀。Windows 上：
+
+- UNC 路径 `//wsl.localhost/Ubuntu/.../api/../file.adoc` 被拼成 `/wsl.localhost/...`（丢了 `//`）
+- 盘符路径 `D:/docs/../file.adoc` 被拼成 `/D:/docs/file.adoc`（多了 `/`）
+
+**最终方案**：`_normalizePath` 根据路径类型区分前缀：
+
+- `//` 开头（UNC）→ 保留 `//` 前缀
+- `X:` 开头（盘符）→ 不加前缀
+- 其余 → 加 `/` 前缀（Unix 绝对路径）
+
+同时修复了 `_updateFormat` 与 `_setEditorContent` 的时序问题：`_updateFormat` 必须在 `_setEditorContent` 之前调用，否则 `buildLinkDecorations` 会用旧的格式 ID 构建装饰，导致从 `.md` 切换到 `.adoc` 时 include 装饰丢失。
+
+== DevTools 调试
+
+发布构建默认启用 `devtools` feature（`Cargo.toml` `[features].default`）。
+运行时按 **F12** 可打开/关闭 DevTools，方便在 Windows 等无 IDE 环境调试前端问题。
+
+正式发布时修改 `Cargo.toml`：
+
+```toml
+[features]
+default = []                    # 关闭 devtools
+# default = ["devtools"]        # 调试时启用
+devtools = ["tauri/devtools"]
+```
