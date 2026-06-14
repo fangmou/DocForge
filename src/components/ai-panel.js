@@ -89,18 +89,18 @@ class AiPanel extends LitElement {
     .content {
       flex: 1;
       overflow-y: auto;
-      padding: 14px;
+      padding: 8px;
     }
     .message {
-      margin-bottom: 4px;
-      padding: 6px 10px;
+      margin-bottom: 2px;
+      padding: 5px 10px;
       border-radius: 8px;
       font-size: 13px;
-      line-height: 1.45;
-      white-space: pre-wrap;
+      line-height: 1.4;
       max-width: 90%;
       word-break: break-word;
     }
+    .msg-body { white-space: pre-wrap; }
     .message.user {
       background: var(--accent);
       color: #fff;
@@ -114,7 +114,7 @@ class AiPanel extends LitElement {
     .message .label {
       font-size: 10px;
       color: var(--text-3);
-      margin-bottom: 4px;
+      margin-bottom: 0;
       font-weight: 600;
       text-transform: uppercase;
     }
@@ -290,16 +290,20 @@ class AiPanel extends LitElement {
       }
     } else if (payload.kind === 'done') {
       this.isStreaming = false;
-      // 给最后一条 assistant 消息附上原文与选区范围，供「对比修改/接受」使用
       if (this.messages.length > 0) {
         const last = this.messages[this.messages.length - 1];
+        // 统一去掉 AI 输出首尾换行：让消息体显示、对比修改、插入编辑器三者一致
+        if (last.role === 'assistant' && last.content) {
+          last.content = last.content.replace(/^\n+|\n+$/g, '');
+        }
+        // 给最后一条 assistant 消息附上原文与选区范围，供「对比修改/接受」使用
         if (last.role === 'assistant' && this._pendingDiffOriginal) {
           last.diffOriginal = this._pendingDiffOriginal;
           last.diffRange = this._pendingDiffRange;
           this._pendingDiffOriginal = '';
           this._pendingDiffRange = null;
-          this.requestUpdate();
         }
+        this.requestUpdate();
       }
     } else if (payload.kind === 'error') {
       this.isStreaming = false;
@@ -431,7 +435,7 @@ class AiPanel extends LitElement {
           : this.messages.map((msg, i) => html`
             <div class="message ${msg.role}">
               <div class="label">${msg.role === 'user' ? t('ai.you') : t('ai.aiLabel')}</div>
-              <div>${msg.role === 'user' ? (msg.label || '（操作）') : msg.content}${msg.role === 'assistant' && msg.content && !this.isStreaming
+              <div class="msg-body">${msg.role === 'user' ? (msg.label || '（操作）') : (msg.content || '')}${msg.role === 'assistant' && msg.content && !this.isStreaming
                 ? html`<button class="insert-btn" @click=${() => eventBus.emit('ai-insert-text', msg.content)}>${t('ai.insertToEditor')}</button>${msg.diffOriginal
                   ? html`<button class="insert-btn" @click=${() => this._showDiff(msg)}>对比修改</button>`
                   : ''}`

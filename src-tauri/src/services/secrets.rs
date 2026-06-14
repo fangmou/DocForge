@@ -7,6 +7,8 @@
 
 use std::path::Path;
 
+// 钥匙串 service 名，仅 macOS/Windows 的 keyring backend 使用（Linux 走文件 store）
+#[cfg(not(target_os = "linux"))]
 pub const SERVICE: &str = "docforge";
 pub const AI_ACCOUNT: &str = "ai-api-key";
 
