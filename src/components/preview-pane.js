@@ -8,6 +8,7 @@ import { buildAttributes } from '../services/asciidoc-attrs.js';
 import { getFileCategory, getFormat } from '../services/format-commands.js';
 import { readBinaryFile } from '../services/file-service.js';
 import { resolveIncludes } from '../services/export-service.js';
+import { getRendered, setRendered } from '../services/preview-cache.js';
 
 let asciidoctor = null;
 let markedInstance = null;
@@ -328,12 +329,28 @@ class PreviewPane extends LitElement {
   async _renderMarkup(content) {
     const isMd = this._currentFormat?.id === 'md';
     if (isMd) {
-      const marked = await getMarked();
       const body = content.startsWith('---') ? stripFrontMatter(content) : content;
-      this.renderedHtml = marked.parse(body);
+      // 渲染缓存：以渲染原文做指纹，命中即跳过 marked.parse
+      const mdCached = getRendered('md', null, body);
+      if (mdCached !== null) { this.renderedHtml = mdCached; return; }
+      const marked = await getMarked();
+      const mdHtml = marked.parse(body);
+      this.renderedHtml = mdHtml;
+      setRendered('md', null, body, mdHtml);
     } else {
       if (!asciidoctor) return;
-      // 解析 include 指令
+      const baseAttrs = {
+        showtitle: true,
+        toc: 'auto',
+        'source-highlighter': 'highlight.js',
+        sectanchors: '',
+        icons: 'font',
+      };
+      // 渲染缓存：以原文内容做指纹，命中即跳过 include 解析与 asciidoctor.convert。
+      // 残留风险见 preview-cache.js：include 引用的外部文件被本软件外修改时不失效。
+      const adocCached = getRendered('adoc', baseAttrs, content);
+      if (adocCached !== null) { this.renderedHtml = adocCached; return; }
+      // 解析 include 指令（仅缓存未命中时执行）
       let resolved = content;
       const activePath = editorState.activeFilePath;
       if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
@@ -342,18 +359,13 @@ class PreviewPane extends LitElement {
           resolved = await resolveIncludes(content, dir);
         } catch (_) {}
       }
-      const baseAttrs = {
-        showtitle: true,
-        toc: 'auto',
-        'source-highlighter': 'highlight.js',
-        sectanchors: '',
-        icons: 'font',
-      };
       const attrs = buildAttributes(resolved, baseAttrs);
-      this.renderedHtml = asciidoctor.convert(resolved, {
+      const html = asciidoctor.convert(resolved, {
         safe: 'safe',
         attributes: attrs,
       });
+      this.renderedHtml = html;
+      setRendered('adoc', baseAttrs, content, html);
     }
   }
 

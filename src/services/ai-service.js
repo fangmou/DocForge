@@ -24,12 +24,13 @@ export const AI_ACTIONS = {
   },
 };
 
-export async function streamChatCompletion(prompt, systemPrompt) {
-  return invoke()('stream_chat_completion', { prompt, systemPrompt });
+export async function streamChatCompletion(messages, systemPrompt) {
+  return invoke()('stream_chat_completion', { messages, systemPrompt });
 }
 
-export async function testAiConnection() {
-  return invoke()('test_ai_connection');
+export async function testAiConnection(config) {
+  // 传入 config（设置面板当前 UI 值）则基于它测试、不持久化；省略则用已保存配置
+  return invoke()('test_ai_connection', { config });
 }
 
 export async function saveAiConfig(config) {
@@ -38,4 +39,17 @@ export async function saveAiConfig(config) {
 
 export async function loadAiConfig() {
   return invoke()('load_ai_config');
+}
+
+// API key 存储于系统钥匙串（不落配置文件）
+export async function getAiApiKey() {
+  return invoke()('secrets_get_ai_key');
+}
+
+export async function setAiApiKey(value) {
+  return invoke()('secrets_set_ai_key', { value });
+}
+
+export async function removeAiApiKey() {
+  return invoke()('secrets_remove_ai_key');
 }

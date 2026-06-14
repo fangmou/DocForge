@@ -6,4 +6,16 @@
 | 构建 | 本地安装包 | `npm run tauri build`
 |===
 
+== 质量检查
+
+[cols="1,2"]
+|===
+| 命令 | 说明
+
+| `make check` | lint（clippy）+ knip（死代码/未用依赖）+ 全部测试（Rust + JS），交付前必跑
+| `make lint` | 仅 Rust clippy 检查
+| `make test` | Rust + JS 全部测试
+| `make size` | 体积护栏：`vite build` + `size-limit`（eager/total 预算）+ `eager-graph`（重型包不泄漏启动图），发布前跑
+|===
+
 include::setup.adoc[]

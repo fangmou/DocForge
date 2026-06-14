@@ -54,6 +54,20 @@ include::_partials/tech-stack.adoc[]
 | 可视化计算 | graph-layout 力导向布局 | 无
 |===
 
+== 性能与体积护栏
+
+借鉴 terax 的轻量纪律，建立体积防回归护栏：
+
+- `make size`：`vite build` + `size-limit`（启动 eager ≤340KB gzip、客户端总量 ≤600KB gzip）+ 自研 `eager-graph`（扫描 dist 产物，从 entry chunk + `index.html` 的 modulepreload 出发做静态 import 闭包，确保 `@asciidoctor`、`marked` 等重型包不泄漏进启动同步加载图）。
+- `make check` 含 `knip`：检测死代码与未用依赖。
+- 预览渲染缓存（`src/services/preview-cache.js`）：以渲染原文做内容指纹 LRU(32)，切 tab 回已渲染文件、视图切换时命中即跳过 `asciidoctor.convert` 全量编译。
+- `@asciidoctor/core`、`marked`、`@codemirror/merge` 均为动态加载的独立 chunk，不进启动图。
+
+== AI 安全
+
+- **SSRF 防护**（`src-tauri/src/services/net.rs`）：AI endpoint 经 DNS 解析后封禁链路本地/云元数据地址（`169.254.0.0/16`、`fe80::/10`），放行 loopback/private（本地模型 Ollama/LM Studio/MLX）与 public；拒绝非 http(s) scheme 与 URL userinfo。`ai_client` 在每次请求前校验。
+- **密钥存储**（`src-tauri/src/services/secrets.rs`）：API key 存系统钥匙串（macOS Keychain / Windows Credential Manager），Linux 用 `app_config_dir/secrets.json`（0600 权限）。启动时自动迁移旧版明文 key 并清空配置文件中的明文字段。
+
 == IPC 命令
 
 include::_partials/ipc-reference/README.adoc[]

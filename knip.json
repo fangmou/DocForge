@@ -1,0 +1,10 @@
+{
+  "entry": ["src/main.js", "scripts/*.mjs"],
+  "project": ["src/**/*.js"],
+  "ignore": ["src/services/__tests__/**"],
+  "ignoreDependencies": [
+    "@tauri-apps/api",
+    "@tauri-apps/plugin-dialog",
+    "@tauri-apps/plugin-fs"
+  ]
+}

@@ -125,6 +125,7 @@
   "settings.ai.testConnection": "测试连接",
   "settings.ai.testOk": "连接成功",
   "settings.ai.testFail": "连接失败",
+  "settings.ai.saveKeyFailed": "API 密钥保存到系统钥匙串失败，AI 配置未保存。请检查钥匙串权限后重试。",
 
   "settings.editor.fontSize": "字号 (px)",
   "settings.editor.tabSize": "Tab 宽度",

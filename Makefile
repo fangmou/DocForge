@@ -1,4 +1,4 @@
-.PHONY: dev check lint test test-rust test-js test-watch \
+.PHONY: dev check lint test test-rust test-js test-watch knip size \
        linux windows mac \
        pkg pkg-linux pkg-windows pkg-mac \
        clean info
@@ -17,7 +17,7 @@ WINDOWS_TARGET := x86_64-pc-windows-gnu
 dev:
 	WEBKIT_DISABLE_DMABUF_RENDERER=1 $(TAURI_CLI) dev
 
-check: lint test
+check: lint knip test
 
 lint:
 	cd $(SRC_DIR) && cargo clippy -- -W clippy::all
@@ -34,6 +34,16 @@ test-js:
 
 test-watch:
 	npx vitest
+
+knip:
+	npx knip
+
+# ========== 体积护栏（发布前/CI）==========
+
+size: | node-modules
+	npx vite build
+	npx size-limit
+	node scripts/eager-graph.mjs
 
 # ========== 快速编译（开发测试）==========
 
@@ -99,6 +109,8 @@ info:
 	@echo "  make test         运行全部测试（Rust + JS）"
 	@echo "  make test-rust    仅 Rust 测试"
 	@echo "  make test-js      仅前端测试"
+	@echo "  make knip         死代码/未用依赖检查（已纳入 make check）"
+	@echo "  make size         体积护栏（build + size-limit + eager-graph，发布前跑）"
 	@echo "  make linux        快速编译 Linux 可执行文件"
 	@echo "  make windows      快速编译 Windows 可执行文件"
 	@echo "  make mac          快速编译 macOS 可执行文件"

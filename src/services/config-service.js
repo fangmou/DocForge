@@ -71,10 +71,6 @@ export async function getRecentFiles(workspacePath) {
   return invoke()('get_recent_files', { workspacePath: workspacePath || null });
 }
 
-export async function clearRecentFiles() {
-  return invoke()('clear_recent_files');
-}
-
 export async function setCurrentWorkspace(path) {
   return invoke()('set_current_workspace', { path });
 }
@@ -85,10 +81,6 @@ export async function getCurrentWorkspace() {
 
 export async function getRecentWorkspaces() {
   return invoke()('get_recent_workspaces');
-}
-
-export async function clearRecentWorkspaces() {
-  return invoke()('clear_recent_workspaces');
 }
 
 export async function removeRecentWorkspace(path) {
@@ -139,8 +131,4 @@ export async function saveWorkspaceState(workspacePath, state) {
 
 export async function loadWorkspaceState(workspacePath) {
   return invoke()('load_workspace_state', { workspacePath });
-}
-
-export async function getDraftDir(workspacePath) {
-  return invoke()('get_draft_dir', { workspacePath });
 }

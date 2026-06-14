@@ -3,38 +3,76 @@ use reqwest::Client;
 use serde_json::json;
 use once_cell::sync::Lazy;
 use futures_util::StreamExt;
+use crate::services::net::validate_ai_endpoint;
+use serde::Deserialize;
+
+/// 一轮对话消息（role: "user"|"assistant"）。前端传入完整历史，AI 跨轮记忆。
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
 
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
 
 fn build_url(endpoint: &str, path: &str) -> String {
-    format!("{}{}", endpoint.trim_end_matches('/'), path)
+    let base = endpoint.trim_end_matches('/');
+    // 分离 base 尾部的 query/fragment，避免「?team=x」干扰版本段判断；
+    // 拼接时把 query/fragment 移到 path 之后（请求参数属于 path 而非 base 路径）。
+    let (main, suffix) = match base.find(|c| c == '?' || c == '#') {
+        Some(i) => (&base[..i], &base[i..]),
+        None => (base, ""),
+    };
+    // main 已含版本段（如 /v1、/v4）时，path 去掉 /v1 前缀避免重复拼接。
+    // 例：main ".../paas/v4" + path "/v1/chat/completions" -> ".../paas/v4/chat/completions"
+    let has_version = main
+        .rsplit('/')
+        .next()
+        .map(|seg| {
+            seg.starts_with('v')
+                && seg.len() > 1
+                && seg[1..].chars().all(|c| c.is_ascii_digit())
+        })
+        .unwrap_or(false);
+    let path = if has_version && path.starts_with("/v1/") {
+        &path[3..]
+    } else {
+        path
+    };
+    format!("{}{}{}", main, path, suffix)
 }
 
 /// 真流式：每个token立即通过回调推送
 pub async fn stream_completion_realtime<F>(
     config: &AiConfig,
-    prompt: &str,
+    messages: &[ChatMessage],
     system_prompt: Option<&str>,
     mut on_token: F,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 where
     F: FnMut(&str) + Send,
 {
+    validate_ai_endpoint(&config.endpoint).await?;
     let url = build_url(&config.endpoint, "/v1/chat/completions");
 
-    let mut messages = vec![];
+    let mut req_messages = vec![];
     if let Some(sys) = system_prompt {
-        messages.push(json!({"role": "system", "content": sys}));
+        req_messages.push(json!({"role": "system", "content": sys}));
     }
-    messages.push(json!({"role": "user", "content": prompt}));
+    for m in messages {
+        req_messages.push(json!({"role": m.role, "content": m.content}));
+    }
 
-    let body = json!({
+    let mut body = json!({
         "model": config.model,
-        "messages": messages,
-        "max_tokens": config.max_tokens,
+        "messages": req_messages,
         "temperature": config.temperature,
         "stream": true,
     });
+    // max_tokens = 0 表示不限（交由模型上限），避免长输出被截断
+    if config.max_tokens > 0 {
+        body["max_tokens"] = json!(config.max_tokens);
+    }
 
     let response = HTTP_CLIENT
         .post(&url)
@@ -85,6 +123,7 @@ where
 }
 
 pub async fn test_connection(config: &AiConfig) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    validate_ai_endpoint(&config.endpoint).await?;
     let url = build_url(&config.endpoint, "/v1/models");
 
     let response = HTTP_CLIENT
@@ -94,4 +133,62 @@ pub async fn test_connection(config: &AiConfig) -> Result<bool, Box<dyn std::err
         .await?;
 
     Ok(response.status().is_success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_url;
+
+    #[test]
+    fn build_url_plain_base_keeps_v1() {
+        // OpenAI 默认 base（无版本段），path 保留 /v1
+        assert_eq!(
+            build_url("https://api.openai.com", "/v1/chat/completions"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_url("https://api.openai.com/", "/v1/models"),
+            "https://api.openai.com/v1/models"
+        );
+    }
+
+    #[test]
+    fn build_url_versioned_endpoint_strips_v1() {
+        // 智谱 v4 endpoint（已含版本段），path 去掉 /v1 前缀
+        assert_eq!(
+            build_url("https://open.bigmodel.cn/api/coding/paas/v4", "/v1/chat/completions"),
+            "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+        );
+        assert_eq!(
+            build_url("https://open.bigmodel.cn/api/coding/paas/v4", "/v1/models"),
+            "https://open.bigmodel.cn/api/coding/paas/v4/models"
+        );
+    }
+
+    #[test]
+    fn build_url_explicit_v1_no_duplicate() {
+        // endpoint 显式含 /v1，不重复拼接
+        assert_eq!(
+            build_url("https://api.openai.com/v1", "/v1/chat/completions"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn build_url_endpoint_with_query_or_fragment() {
+        // endpoint 带 query/fragment：版本段判断不被参数误判，参数移到 path 之后
+        assert_eq!(
+            build_url("https://gateway.example.com/v1?team=x", "/v1/chat/completions"),
+            "https://gateway.example.com/v1/chat/completions?team=x"
+        );
+        assert_eq!(
+            build_url("https://host.com?k=v", "/v1/models"),
+            "https://host.com/v1/models?k=v"
+        );
+        // fragment 同理
+        assert_eq!(
+            build_url("https://host.com/v1#frag", "/v1/models"),
+            "https://host.com/v1/models#frag"
+        );
+    }
 }

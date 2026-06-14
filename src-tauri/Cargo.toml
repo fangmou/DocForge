@@ -32,6 +32,11 @@ which = "6"
 regex = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22.1"
+url = "2"
+
+# 系统钥匙串：仅 macOS/Windows 启用（Linux 走 0600 文件 store，避开 secret-service 依赖）
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+keyring = "2"
 
 [profile.release]
 opt-level = "z"

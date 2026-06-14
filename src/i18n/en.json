@@ -125,6 +125,7 @@
   "settings.ai.testConnection": "Test Connection",
   "settings.ai.testOk": "Connection successful",
   "settings.ai.testFail": "Connection failed",
+  "settings.ai.saveKeyFailed": "Failed to save the API key to the system keychain; AI configuration was not saved. Check keychain permissions and retry.",
 
   "settings.editor.fontSize": "Font Size (px)",
   "settings.editor.tabSize": "Tab Size",

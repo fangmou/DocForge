@@ -90,6 +90,14 @@ function asciidocSyntax() {
   };
 }
 
+// 懒构造语法状态机：避免模块 import 时就构建、被拉进 eager 启动图。
+// define 幂等，首次调用构建并缓存，后续切换复用——兼顾「不重复构建」与「不进启动图」。
+let _asciidocLanguage = null;
+function asciidocLanguage() {
+  if (!_asciidocLanguage) _asciidocLanguage = StreamLanguage.define(asciidocSyntax());
+  return _asciidocLanguage;
+}
+
 // 路径规范化（处理 .. 和 .）
 function _normalizePath(p) {
   const isUnc = p.startsWith('//');
@@ -137,6 +145,15 @@ const xrefDeco = Decoration.mark({ class: 'cm-include-link' });
 function buildLinkDecorations(state) {
   // Markdown 文件不需要 include/xref 装饰
   if (_currentFormatId === 'md') return Decoration.none;
+  // 快速早退：文档不含任何链接标记时跳过逐行扫描（多数文档命中）。
+  // 逐行 line.text.includes 检查，避免 state.doc.toString() 全量分配整串——
+  // 此函数每次事务（每次按键）都跑，大文档上整串分配是纯浪费。
+  let hasLinkMarker = false;
+  for (let i = 1; i <= state.doc.lines && !hasLinkMarker; i++) {
+    const lt = state.doc.line(i).text;
+    hasLinkMarker = lt.includes('include::') || lt.includes('xref:') || lt.includes('<<');
+  }
+  if (!hasLinkMarker) return Decoration.none;
   const builder = new RangeSetBuilder();
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
@@ -640,7 +657,11 @@ class EditorPane extends LitElement {
       'file-opened': ({ path, content, binary }) => this._openFile(path, content, binary),
       'save-file': () => this._saveFile(),
       'theme-changed': (theme) => this._setTheme(theme),
-      'ai-insert-text': (text) => this._insertText(text),
+      'ai-insert-text': (payload) => {
+        // 兼容字符串（普通插入）与 {text, range}（AI 改写「接受」：精确替换原始选区范围）
+        if (typeof payload === 'string') this._insertText(payload);
+        else if (payload && typeof payload === 'object') this._insertText(payload.text, payload.range);
+      },
       'new-file': () => this._newFile(),
       'create-from-template': ({ content }) => this._newFileFromTemplate(content),
       'open-find-replace': () => this._openFindReplace(),
@@ -784,7 +805,7 @@ class EditorPane extends LitElement {
           vimCompartment.of([]),
           // 自定义快捷键（放在标准 keymap 之前，可覆盖标准绑定）
           keymapCompartment.of(keymap.of([])),
-          languageCompartment.of(StreamLanguage.define(asciidocSyntax())),
+          languageCompartment.of(asciidocLanguage()),
           syntaxHighlighting(defaultHighlightStyle),
           themeCompartment.of([]),
           EditorView.updateListener.of((update) => {
@@ -1028,7 +1049,7 @@ class EditorPane extends LitElement {
       this._lastSwitchedFormat = targetFormat || 'adoc';
       this._view.dispatch({
         effects: [
-          languageCompartment.reconfigure(StreamLanguage.define(asciidocSyntax())),
+          languageCompartment.reconfigure(asciidocLanguage()),
           completionCompartment.reconfigure(autocompletion({ override: [asciidocCompletions] })),
         ],
       });
@@ -1231,9 +1252,10 @@ class EditorPane extends LitElement {
     });
   }
 
-  _insertText(text) {
+  _insertText(text, range) {
     if (!this._view) return;
-    const { from, to } = this._view.state.selection.main;
+    // 有 range 时替换指定范围（AI 改写「接受」还原原选区），否则替换当前选区（普通插入）
+    const { from, to } = range || this._view.state.selection.main;
     this._view.dispatch({
       changes: { from, to, insert: text },
     });
@@ -1434,6 +1456,18 @@ class EditorPane extends LitElement {
     if (!this._view) return '';
     const { from, to } = this._view.state.selection.main;
     return this._view.state.doc.sliceString(from, to);
+  }
+
+  /** 返回当前选区 {from, to, text}；无视图返回 null。供 AI 改写「接受」精确还原原选区 */
+  getSelectionRange() {
+    if (!this._view) return null;
+    const { from, to } = this._view.state.selection.main;
+    return { from, to, text: this._view.state.doc.sliceString(from, to) };
+  }
+
+  /** 返回当前文档全文（CodeMirror 真相源，实时）；无视图返回空串。供 AI 续写/总结读上下文 */
+  getDocumentContent() {
+    return this._view ? this._view.state.doc.toString() : '';
   }
 
   render() {

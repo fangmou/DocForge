@@ -31,3 +31,36 @@ await listen('ai-stream-chunk', (event) => {
 测试当前 AI API 配置是否可用。请求 `GET {endpoint}/v1/models`。
 
 NOTE: AI 配置的保存/加载命令（`save_ai_config`、`load_ai_config`）已迁移到 link:config.adoc[配置命令模块]。
+
+== API 密钥安全存储
+
+API key 不再持久化到 `docforge-config.json`，改存系统钥匙串：
+
+- **macOS / Windows**：系统 Keychain / Credential Manager（`keyring` crate，Service `docforge`）。
+- **Linux**：`app_config_dir/secrets.json`（0600 权限）——避开 secret-service 对 D-Bus 的运行时依赖，无头/WSL 也可用。
+
+应用启动时若发现旧版明文 key（存于配置文件）会自动迁移到钥匙串，并清空配置文件中的明文。请求 AI 时优先读钥匙串，缺失则回退配置（兼容迁移前）。
+
+[[secrets-get-ai-key]]
+=== secrets_get_ai_key
+
+*参数*: 无
+*返回*: `Result<Option<String>, String>`
+
+从钥匙串读取 API key；无 key 返回 `None`。
+
+[[secrets-set-ai-key]]
+=== secrets_set_ai_key
+
+*参数*: `value: String`
+*返回*: `Result<(), String>`
+
+将 API key 写入钥匙串。设置面板保存时调用。
+
+[[secrets-remove-ai-key]]
+=== secrets_remove_ai_key
+
+*参数*: 无
+*返回*: `Result<(), String>`
+
+从钥匙串删除 API key（不存在视为成功）。设置面板清空 key 输入并保存时调用。

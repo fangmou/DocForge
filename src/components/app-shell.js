@@ -7,6 +7,7 @@ import { linkIndex } from '../services/link-index.js';
 import { pluginLoader } from '../services/plugin-loader.js';
 import { shortcutRegistry } from '../services/shortcut-registry.js';
 import { loadEditorConfig, saveEditorConfig, getCurrentWorkspace, getRecentWorkspaces, loadWorkspaceState, saveWorkspaceState } from '../services/config-service.js';
+import { hashString } from '../services/hash.js';
 
 class AppShell extends LitElement {
   static properties = {
@@ -374,14 +375,7 @@ class AppShell extends LitElement {
     return false;
   }
 
-  /** 对字符串做简单稳定的哈希（返回十六进制字符串） */
-  static _hashPath(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-    }
-    return (h >>> 0).toString(16);
-  }
+  // 字符串哈希（DJB2 变种）已抽取到 src/services/hash.js 的 hashString，供缓存指纹与草稿路径复用
 
   /** 保存当前工作区的完整状态（tabs + drafts） */
   async _saveCurrentWorkspace(wsPath) {
@@ -395,7 +389,7 @@ class AppShell extends LitElement {
       const needsDraft = fileData.isDirty || tab.path.startsWith('__untitled_');
       if (needsDraft) {
         try {
-          const draftPath = `${draftDir}/${AppShell._hashPath(tab.path)}.adoc`;
+          const draftPath = `${draftDir}/${hashString(tab.path)}.adoc`;
           await writeFile(draftPath, fileData.content || '');
           tab.draftPath = draftPath;
           tab.isDirty = true;

@@ -11,10 +11,17 @@ macro_rules! lock_config {
     };
 }
 
+/// 应用配置目录；解析失败时回退到当前工作目录（与历史行为一致）。
+/// 统一收口 app_config_dir 解析，供 config / secrets / draft 等复用。
+pub fn app_config_dir_or_cwd(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
+}
+
 /// 获取配置文件路径
 pub fn config_path(app: &tauri::AppHandle) -> PathBuf {
-    let dir = app.path().app_config_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let dir = app_config_dir_or_cwd(app);
     std::fs::create_dir_all(&dir).ok();
     dir.join("docforge-config.json")
 }
@@ -335,22 +342,46 @@ pub async fn load_ai_config(
 /// 应用启动时调用：从磁盘加载配置
 pub fn load_config_from_disk(app: &tauri::AppHandle) -> AppConfig {
     let path = config_path(app);
-    if path.exists() {
+    let mut config = if path.exists() {
         if let Ok(json) = std::fs::read_to_string(&path) {
-            if let Ok(mut config) = serde_json::from_str::<AppConfig>(&json) {
+            if let Ok(mut c) = serde_json::from_str::<AppConfig>(&json) {
                 // 兼容旧版 Windows 配置中的 \ 分隔路径
-                config.current_workspace = normalize_path(&config.current_workspace);
-                for f in &mut config.recent_files {
+                c.current_workspace = normalize_path(&c.current_workspace);
+                for f in &mut c.recent_files {
                     f.path = normalize_path(&f.path);
                 }
-                for w in &mut config.recent_workspaces {
+                for w in &mut c.recent_workspaces {
                     w.path = normalize_path(&w.path);
                 }
-                return config;
+                c
+            } else {
+                AppConfig::default()
             }
+        } else {
+            AppConfig::default()
+        }
+    } else {
+        AppConfig::default()
+    };
+
+    // 迁移：旧版明文 api_key → 钥匙串，成功后清空配置文件中的 api_key。
+    // 幂等：钥匙串已有非空 key 时视为已迁移，不覆盖——避免每次启动用残留的旧明文
+    // （备份还原 / 多设备同步 / persist 失败未清空）覆盖用户新设的 key。
+    if !config.ai.api_key.is_empty() {
+        let dir = app_config_dir_or_cwd(app);
+        let already = matches!(
+            crate::services::secrets::get_ai_key(&dir),
+            Ok(Some(k)) if !k.is_empty()
+        );
+        let migrated = already
+            || crate::services::secrets::set_ai_key(&dir, &config.ai.api_key).is_ok();
+        if migrated {
+            config.ai.api_key = String::new();
+            persist_to_disk(app, &config);
         }
     }
-    AppConfig::default()
+
+    config
 }
 
 // === 工作区管理 ===
@@ -611,8 +642,7 @@ fn workspace_hash(path: &str) -> String {
 
 /// 返回 workspace 状态文件路径
 fn workspace_state_path(app: &tauri::AppHandle, ws_path: &str) -> PathBuf {
-    let dir = app.path().app_config_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let dir = app_config_dir_or_cwd(app);
     let ws_dir = dir.join("workspaces");
     std::fs::create_dir_all(&ws_dir).ok();
     ws_dir.join(format!("{}.json", workspace_hash(ws_path)))
@@ -620,8 +650,7 @@ fn workspace_state_path(app: &tauri::AppHandle, ws_path: &str) -> PathBuf {
 
 /// 返回 draft 目录
 pub fn draft_dir(app: &tauri::AppHandle, ws_path: &str) -> PathBuf {
-    let dir = app.path().app_config_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let dir = app_config_dir_or_cwd(app);
     let d = dir.join("workspace-drafts").join(workspace_hash(ws_path));
     std::fs::create_dir_all(&d).ok();
     d

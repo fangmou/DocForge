@@ -9,6 +9,12 @@ pub struct AiConfig {
     pub model: String,
     pub max_tokens: u32,
     pub temperature: f32,
+    #[serde(default = "default_context_limit")]
+    pub context_limit: u32,
+}
+
+fn default_context_limit() -> u32 {
+    100000
 }
 
 impl Default for AiConfig {
@@ -17,8 +23,9 @@ impl Default for AiConfig {
             endpoint: "https://api.openai.com".into(),
             api_key: String::new(),
             model: "gpt-4o".into(),
-            max_tokens: 2048,
+            max_tokens: 8192,
             temperature: 0.7,
+            context_limit: 100000,
         }
     }
 }

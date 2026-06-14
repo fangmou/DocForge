@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { loadAiConfig, saveAiConfig, testAiConnection } from '../services/ai-service.js';
+import { loadAiConfig, saveAiConfig, testAiConnection, getAiApiKey, setAiApiKey, removeAiApiKey } from '../services/ai-service.js';
 import {
   saveEditorConfig, loadEditorConfig,
   loadExportConfig, saveExportConfig, savePandocConfig,
@@ -12,6 +12,7 @@ import { eventBus } from '../services/event-bus.js';
 import { t, setLanguage, getLanguage } from '../services/i18n.js';
 import { shortcutRegistry, keyFromEvent } from '../services/shortcut-registry.js';
 import { detectPdfCommand, detectPandocCommand, resolveExportPath } from '../services/export-service.js';
+import { showConfirm } from '../services/dialog.js';
 
 class SettingsDialog extends LitElement {
   static properties = {
@@ -22,6 +23,7 @@ class SettingsDialog extends LitElement {
     apiKey: { type: String },
     model: { type: String },
     maxTokens: { type: Number },
+    contextLimit: { type: Number },
     temperature: { type: Number },
     testStatus: { type: String },
     testStatusType: { type: String },
@@ -503,7 +505,8 @@ class SettingsDialog extends LitElement {
     this.endpoint = 'https://api.openai.com';
     this.apiKey = '';
     this.model = 'gpt-4o';
-    this.maxTokens = 2048;
+    this.maxTokens = 8192;
+    this.contextLimit = 100000;
     this.temperature = 0.7;
     this.testStatus = '';
     this.testStatusType = '';
@@ -587,9 +590,16 @@ class SettingsDialog extends LitElement {
     if (aiRes.status === 'fulfilled') {
       const ai = aiRes.value;
       this.endpoint = ai.endpoint;
-      this.apiKey = ai.api_key;
+      // API key 从钥匙串读取（迁移后主源），回退配置中的 api_key（兼容旧版）
+      try {
+        const stored = await getAiApiKey();
+        this.apiKey = stored || ai.api_key || '';
+      } catch (_) {
+        this.apiKey = ai.api_key || '';
+      }
       this.model = ai.model;
       this.maxTokens = ai.max_tokens;
+      this.contextLimit = ai.context_limit;
       this.temperature = ai.temperature;
     }
 
@@ -678,18 +688,30 @@ class SettingsDialog extends LitElement {
     this.classList.remove('visible');
   }
 
+  /** 保存 AI 凭证：key 存钥匙串（空则删除），配置 api_key 留空。
+   * 任一步失败即抛错——钥匙串写失败时不写空配置，避免密钥两边皆空被永久丢失。 */
+  async _persistAiCredentials() {
+    if (this.apiKey) {
+      await setAiApiKey(this.apiKey);
+    } else {
+      await removeAiApiKey();
+    }
+    await saveAiConfig({
+      endpoint: this.endpoint,
+      api_key: '',
+      model: this.model,
+      max_tokens: this.maxTokens,
+      temperature: this.temperature,
+    });
+  }
+
   async _save() {
-    // 保存 AI 配置
+    // AI 凭证：keychain 写失败时不写空配置（避免丢 key），提示后继续保存其他无关配置
     try {
-      await saveAiConfig({
-        endpoint: this.endpoint,
-        api_key: this.apiKey,
-        model: this.model,
-        max_tokens: this.maxTokens,
-        temperature: this.temperature,
-      });
+      await this._persistAiCredentials();
     } catch (e) {
       console.error('保存AI配置失败:', e);
+      showConfirm(t('settings.ai.saveKeyFailed'));
     }
 
     // 保存编辑器配置（含语言）
@@ -781,8 +803,16 @@ class SettingsDialog extends LitElement {
     this.testStatus = t('settings.ai.testOk').replace('成功', '...').replace('successful', '...');
     this.testStatusType = '';
     this.requestUpdate();
+    // 基于当前 UI 输入测试，不持久化（避免「测试连接」隐式保存临时 endpoint/key）
     try {
-      const ok = await testAiConnection();
+      const ok = await testAiConnection({
+        endpoint: this.endpoint,
+        api_key: this.apiKey || '',
+        model: this.model,
+        max_tokens: this.maxTokens,
+        context_limit: this.contextLimit,
+        temperature: this.temperature,
+      });
       this.testStatus = ok ? t('settings.ai.testOk') : t('settings.ai.testFail');
       this.testStatusType = ok ? 'ok' : 'fail';
     } catch (e) {
@@ -985,6 +1015,10 @@ class SettingsDialog extends LitElement {
         <div class="field">
           <label>${t('settings.ai.maxTokens')}</label>
           <input type="number" .value=${this.maxTokens} @input=${(e) => this.maxTokens = parseInt(e.target.value)} />
+          <div class="hint">单次最大输出 tokens；0 = 不限（适合长文，避免被截断）</div>
+          <label>上下文上限（tokens）</label>
+          <input type="number" .value=${this.contextLimit} @input=${(e) => this.contextLimit = parseInt(e.target.value)} />
+          <div class="hint">多轮对话自动压缩阈值。0 = 不压缩；默认 100000（大模型如 1M 上下文可调高）</div>
         </div>
         <div class="field">
           <label>${t('settings.ai.temperature')}</label>

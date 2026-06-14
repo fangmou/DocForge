@@ -13,6 +13,12 @@ export default defineConfig({
                 || id.includes('@lezer')) {
               return 'codemirror';
             }
+            if (id.includes('@asciidoctor')) {
+              return 'asciidoctor';
+            }
+            if (id.includes('/marked/')) {
+              return 'marked';
+            }
             if (id.includes('@tauri-apps')) {
               return 'tauri';
             }
