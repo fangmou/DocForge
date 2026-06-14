@@ -111,6 +111,79 @@ describe('EditorState', () => {
     expect(state.getFile('/ws/a.adoc').isDirty).toBe(false);
   });
 
+  // ─── reloadContent ───
+
+  it('reloadContent updates content and clears dirty flag', () => {
+    state.openFile('/ws/a.adoc', 'original');
+    state.updateContent('/ws/a.adoc', 'local-edit'); // 用户本地修改，标记 dirty
+    expect(state.getFile('/ws/a.adoc').isDirty).toBe(true);
+    // 外部修改后用户确认重新加载：用磁盘内容覆盖，且视为干净
+    state.reloadContent('/ws/a.adoc', 'external-new');
+    expect(state.getFile('/ws/a.adoc').content).toBe('external-new');
+    expect(state.getFile('/ws/a.adoc').isDirty).toBe(false);
+  });
+
+  it('reloadContent is no-op for non-existent file', () => {
+    state.reloadContent('/ws/none.adoc', 'content');
+    expect(state.getFile('/ws/none.adoc')).toBeNull();
+  });
+
+  it('reloadContent does not notify when already clean and unchanged', () => {
+    state.openFile('/ws/a.adoc', 'content');
+    const changes = [];
+    state.onChange(() => changes.push(1));
+    state.reloadContent('/ws/a.adoc', 'content');
+    expect(changes).toEqual([]);
+  });
+
+  it('reloadContent clears external conflict flag', () => {
+    state.openFile('/ws/a.adoc', 'old');
+    state.markExternalConflict('/ws/a.adoc', true);
+    expect(state.getFile('/ws/a.adoc').hasExternalConflict).toBe(true);
+    state.reloadContent('/ws/a.adoc', 'new-from-disk');
+    expect(state.getFile('/ws/a.adoc').hasExternalConflict).toBe(false);
+  });
+
+  // ─── markExternalConflict ───
+
+  it('markExternalConflict sets the conflict flag', () => {
+    state.openFile('/ws/a.adoc', 'content');
+    state.markExternalConflict('/ws/a.adoc', true);
+    expect(state.getFile('/ws/a.adoc').hasExternalConflict).toBe(true);
+  });
+
+  it('markExternalConflict is no-op when value unchanged', () => {
+    state.openFile('/ws/a.adoc', 'content');
+    const changes = [];
+    state.onChange(() => changes.push(1));
+    state.markExternalConflict('/ws/a.adoc', false); // 默认即为 false
+    expect(state.getFile('/ws/a.adoc').hasExternalConflict).toBe(false);
+    expect(changes).toEqual([]);
+  });
+
+  it('markExternalConflict is no-op for non-existent file', () => {
+    state.markExternalConflict('/ws/none.adoc', true);
+    expect(state.getFile('/ws/none.adoc')).toBeNull();
+  });
+
+  it('markSaved clears external conflict flag', () => {
+    state.openFile('/ws/a.adoc', 'content');
+    state.markExternalConflict('/ws/a.adoc', true);
+    state.markSaved('/ws/a.adoc');
+    expect(state.getFile('/ws/a.adoc').hasExternalConflict).toBe(false);
+  });
+
+  // ─── getOpenFiles conflict ───
+
+  it('getOpenFiles reports hasExternalConflict per tab', () => {
+    state.openFile('/ws/a.adoc', 'a');
+    state.openFile('/ws/b.adoc', 'b');
+    state.markExternalConflict('/ws/a.adoc', true);
+    const open = state.getOpenFiles();
+    expect(open.find(f => f.path === '/ws/a.adoc').hasExternalConflict).toBe(true);
+    expect(open.find(f => f.path === '/ws/b.adoc').hasExternalConflict).toBe(false);
+  });
+
   // ─── getDirtyFiles ───
 
   it('getDirtyFiles returns only dirty paths', () => {

@@ -93,6 +93,7 @@
   "statusBar.openFile": "点击打开文件",
   "statusBar.copyPath": "复制路径",
   "statusBar.revealInShell": "打开所在目录",
+  "statusBar.externalConflict": "磁盘已修改 · 点击重新加载",
 
   "preview.placeholder": "预览区域 — 编辑文档后自动渲染",
 
@@ -225,8 +226,22 @@
   "ai.action.continue": "续写",
   "ai.action.polish": "润色",
   "ai.action.translate": "翻译",
+  "ai.action.summarize": "总结",
+  "ai.action.improve": "完善",
   "ai.errorPrefix": "错误: ",
   "ai.requestFailed": "请求失败: {error}",
+  "ai.more": "更多",
+  "ai.manageScenes": "管理自定义场景",
+  "ai.scene.title": "自定义场景",
+  "ai.scene.add": "+ 新增场景",
+  "ai.scene.name": "名称",
+  "ai.scene.icon": "图标",
+  "ai.scene.prompt": "提示词",
+  "ai.scene.promptHint": "描述这个场景要 AI 做什么（作为系统提示词，作用于选中文本或整篇）…",
+  "ai.scene.delete": "删除",
+  "ai.scene.confirmDelete": "确定删除场景「{name}」?",
+  "ai.scene.empty": "暂无自定义场景，点击上方「+ 新增场景」",
+  "ai.scene.done": "完成",
 
   "search.title": "全文搜索",
   "search.placeholder": "搜索内容...",
@@ -278,6 +293,8 @@
   "tab.closeAll": "关闭全部",
   "tab.copyPath": "复制路径",
   "tab.revealInShell": "在文件管理器中显示",
+  "tab.reloadFromDisk": "从磁盘重新加载",
+  "tab.conflictTooltip": "磁盘已被外部修改，保存将覆盖外部改动",
 
   "backlinks.title": "反向链接",
   "backlinks.empty": "无反向链接",
@@ -296,6 +313,7 @@
   "graph.filterPlaceholder": "过滤节点...",
   "graph.nodeCount": "节点",
   "graph.edgeCount": "连接",
+  "graph.exitFullscreen": "退出全屏",
 
   "plugin.title": "插件管理",
   "plugin.empty": "将插件放入 .docforge/plugins/ 目录",
@@ -316,6 +334,10 @@
   "search.all": "全部",
   "search.byWord": "全词匹配",
   "search.close": "关闭",
+  "panel.collapse": "收起",
+  "dialog.close": "关闭",
+  "panel.collapseWithName": "收起{name}面板",
+  "template.title": "模板",
 
   "exportHistory.title": "导出历史",
   "exportHistory.empty": "暂无导出记录",

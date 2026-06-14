@@ -4,6 +4,7 @@ import { editorState } from '../services/editor-state.js';
 import { pluginRegistry } from '../services/plugin-registry.js';
 import { pluginLoader } from '../services/plugin-loader.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 
 class PluginManagerPanel extends LitElement {
   static properties = {
@@ -41,10 +42,18 @@ class PluginManagerPanel extends LitElement {
     .header .close {
       margin-left: auto;
       cursor: pointer;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
     }
-    .header .close:hover { opacity: 1; color: var(--text-1); }
+    .header .close:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
+    .header .close svg { width: 16px; height: 16px; pointer-events: none; }
     .list {
       flex: 1;
       overflow-y: auto;
@@ -173,7 +182,12 @@ class PluginManagerPanel extends LitElement {
     return html`
       <div class="header">
         <span>🧩 ${t('plugin.title')}</span>
-        <span class="close" @click=${(e) => { e.stopPropagation(); this.visible = false; this.classList.remove('visible'); eventBus.emit('plugin-panel-toggled', false); }}>✕</span>
+        <span class="close" role="button" tabindex="0" title="${t('panel.collapseWithName', { name: t('plugin.title') })}" @keydown=${activateOnKey} @click=${(e) => { e.stopPropagation(); this.visible = false; this.classList.remove('visible'); eventBus.emit('plugin-panel-toggled', false); }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+        </span>
       </div>
       <div class="list">
         ${this.plugins.length === 0

@@ -63,6 +63,8 @@
 | `load_shortcuts` | 加载快捷键配置 | link:config.adoc#load-shortcuts[查看]
 | `save_custom_snippets` | 保存自定义标记片段 | link:config.adoc#save-custom-snippets[查看]
 | `load_custom_snippets` | 加载自定义标记片段 | link:config.adoc#load-custom-snippets[查看]
+| `save_custom_ai_scenes` | 保存自定义 AI 场景 | link:config.adoc#save-custom-ai-scenes[查看]
+| `load_custom_ai_scenes` | 加载自定义 AI 场景 | link:config.adoc#load-custom-ai-scenes[查看]
 | `add_export_history` | 添加导出历史记录 | link:config.adoc#add-export-history[查看]
 | `get_export_history` | 获取导出历史列表 | link:config.adoc#get-export-history[查看]
 | `remove_export_history` | 删除单条导出记录 | link:config.adoc#remove-export-history[查看]

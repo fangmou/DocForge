@@ -39,6 +39,7 @@ class StatusBar extends LitElement {
     totalLines: { type: Number },
     words: { type: Number },
     isDirty: { type: Boolean },
+    hasConflict: { type: Boolean },
     encoding: { type: String },
     fileType: { type: String },
     message: { type: String },
@@ -85,6 +86,14 @@ class StatusBar extends LitElement {
     }
     .indicator.dirty {
       background: var(--color-warning);
+    }
+    .indicator.conflict {
+      background: var(--color-error);
+      cursor: pointer;
+    }
+    .conflict-msg {
+      color: var(--color-error);
+      font-weight: 500;
     }
     .message {
       color: var(--text-1);
@@ -210,6 +219,7 @@ class StatusBar extends LitElement {
     this.totalLines = 0;
     this.words = 0;
     this.isDirty = false;
+    this.hasConflict = false;
     this.encoding = 'UTF-8';
     this.fileType = '';
     this.message = '';
@@ -291,6 +301,7 @@ class StatusBar extends LitElement {
     if (active) {
       this.filePath = active.path;
       this.isDirty = active.isDirty;
+      this.hasConflict = active.hasExternalConflict;
       this.totalLines = active.content ? active.content.split('\n').length : 0;
       this.words = active.content ? active.content.split(/\s+/).filter(Boolean).length : 0;
       this.encoding = detectEncoding(active.content);
@@ -298,6 +309,7 @@ class StatusBar extends LitElement {
     } else {
       this.filePath = '';
       this.isDirty = false;
+      this.hasConflict = false;
       this.totalLines = 0;
       this.words = 0;
       this.encoding = 'UTF-8';
@@ -339,7 +351,14 @@ class StatusBar extends LitElement {
     return html`
       <div class="left">
         ${this.filePath ? html`
-          <span class="indicator ${this.isDirty ? 'dirty' : ''}"></span>
+          <span class="indicator ${this.isDirty ? 'dirty' : ''} ${this.hasConflict ? 'conflict' : ''}"
+                title="${this.hasConflict ? t('statusBar.externalConflict') : ''}"
+                @click=${this.hasConflict ? () => eventBus.emit('reload-from-disk', editorState.activeFilePath) : null}></span>
+        ` : ''}
+        ${this.hasConflict ? html`
+          <span class="conflict-msg stat-link"
+                title="${t('tab.conflictTooltip')}"
+                @click=${() => eventBus.emit('reload-from-disk', editorState.activeFilePath)}>${t('statusBar.externalConflict')}</span>
         ` : ''}
         <span class="btn-group">
           <span class="popup-anchor">

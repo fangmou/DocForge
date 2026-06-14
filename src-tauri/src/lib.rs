@@ -109,6 +109,8 @@ pub fn run() {
             commands::config::load_shortcuts,
             commands::config::save_custom_snippets,
             commands::config::load_custom_snippets,
+            commands::config::save_custom_ai_scenes,
+            commands::config::load_custom_ai_scenes,
             commands::config::add_export_history,
             commands::config::get_export_history,
             commands::config::remove_export_history,

@@ -10,6 +10,7 @@ import {
 } from '../services/config-service.js';
 import { eventBus } from '../services/event-bus.js';
 import { t, setLanguage, getLanguage } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 import { shortcutRegistry, keyFromEvent } from '../services/shortcut-registry.js';
 import { detectPdfCommand, detectPandocCommand, resolveExportPath } from '../services/export-service.js';
 import { showConfirm } from '../services/dialog.js';
@@ -120,11 +121,18 @@ class SettingsDialog extends LitElement {
     .header .close {
       margin-left: auto;
       cursor: pointer;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
       font-size: 16px;
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
     }
-    .header .close:hover { opacity: 1; color: var(--text-1); }
+    .header .close:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
     .dialog-body {
       display: flex;
       flex: 1;
@@ -940,7 +948,7 @@ class SettingsDialog extends LitElement {
         <div class="header">
           <span class="dot"></span>
           ${t('settings.title')}
-          <span class="close" @click=${this._hide}>✕</span>
+          <span class="close" role="button" tabindex="0" title="${t('dialog.close')}" @keydown=${activateOnKey} @click=${this._hide}>✕</span>
         </div>
         <div class="dialog-body">
           <div class="nav">

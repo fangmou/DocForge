@@ -20,6 +20,7 @@ export class EditorState {
         scrollTop: 0,
         cursorPos: 0,
         isDirty: false,
+        hasExternalConflict: false,
       });
       this.tabOrder.push(path);
     }
@@ -77,10 +78,34 @@ export class EditorState {
 
   markSaved(path) {
     const file = this.files.get(path);
-    if (file && file.isDirty) {
-      file.isDirty = false;
-      this._notify();
-    }
+    if (!file) return;
+    // 保存后内容与磁盘一致：一并清除未保存标记与外部冲突标记
+    const changed = file.isDirty || file.hasExternalConflict;
+    file.isDirty = false;
+    file.hasExternalConflict = false;
+    if (changed) this._notify();
+  }
+
+  /** 从磁盘重新加载：用磁盘内容覆盖内存内容，并标记为已保存（内容与磁盘一致）。
+   *  区别于 updateContent（用户编辑→标记 dirty）：外部修改重新加载后应视为干净，
+   *  同时清除外部冲突标记。 */
+  reloadContent(path, content) {
+    const file = this.files.get(path);
+    if (!file) return;
+    if (file.content === content && !file.isDirty && !file.hasExternalConflict) return;
+    file.content = content;
+    file.isDirty = false;
+    file.hasExternalConflict = false;
+    this._notify();
+  }
+
+  /** 标记/清除外部修改冲突（磁盘被外部修改但用户拒绝重载，保存将覆盖外部改动） */
+  markExternalConflict(path, hasConflict) {
+    const file = this.files.get(path);
+    if (!file) return;
+    if (file.hasExternalConflict === hasConflict) return;
+    file.hasExternalConflict = hasConflict;
+    this._notify();
   }
 
   getActiveFile() {
@@ -102,6 +127,7 @@ export class EditorState {
           path,
           name: path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop(),
           isDirty: state.isDirty,
+          hasExternalConflict: state.hasExternalConflict,
         };
       });
   }
@@ -137,6 +163,8 @@ export class EditorState {
           scrollTop: tab.scroll_top ?? tab.scrollTop ?? 0,
           cursorPos: tab.cursor_pos ?? tab.cursorPos ?? 0,
           isDirty: tab.is_dirty ?? tab.isDirty ?? false,
+          // 冲突状态不持久化：重启视为重新打开，磁盘为权威
+          hasExternalConflict: false,
         });
         this.tabOrder.push(tab.path);
       }

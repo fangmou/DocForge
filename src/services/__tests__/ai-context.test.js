@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildAiRequest,
   buildCustomRequest,
+  buildSceneRequest,
   truncateForContext,
   composeSystemPrompt,
   MAX_CONTEXT_TOKENS_VALUE,
@@ -112,6 +113,47 @@ describe('buildCustomRequest — 自由输入 + 上下文', () => {
 
   it('md 格式注入到 systemPrompt', () => {
     const r = buildCustomRequest('润色', { selected: 'x', formatId: 'md' });
+    expect(r.systemPrompt).toContain('Markdown');
+  });
+});
+
+describe('buildAiRequest — improve（完善，rewrite 行为）', () => {
+  it('有选区时 original=选区（启用 diff）', () => {
+    const r = buildAiRequest('improve', { selected: '草稿', fullContent: '全文', formatId: 'adoc' });
+    expect(r.userMessage).toContain('<selection>');
+    expect(r.original).toBe('草稿');
+  });
+
+  it('无选区时用截断全文作 original（整篇可 diff）', () => {
+    const r = buildAiRequest('improve', { selected: '', fullContent: '整篇草稿', formatId: 'adoc' });
+    expect(r.userMessage).toContain('<document format="adoc">');
+    expect(r.original).toBe('整篇草稿');
+  });
+});
+
+describe('buildSceneRequest — 自定义场景（与内置同构）', () => {
+  const rewriteScene = { name: '周报整理', icon: '📋', systemPrompt: '请把以下内容整理成周报。', behavior: 'rewrite' };
+  const generateScene = { name: '头脑风暴', icon: '💡', systemPrompt: '请围绕主题发散思考。', behavior: 'generate' };
+
+  it('rewrite 自定义场景有选区：original=选区', () => {
+    const r = buildSceneRequest(rewriteScene, { selected: '原文', formatId: 'md' });
+    expect(r.userMessage).toContain('<selection>');
+    expect(r.original).toBe('原文');
+    expect(r.systemPrompt).toContain('周报');
+  });
+
+  it('rewrite 自定义场景无选区：original=截断全文（整篇可 diff）', () => {
+    const r = buildSceneRequest(rewriteScene, { selected: '', fullContent: '全文', formatId: 'md' });
+    expect(r.original).toBe('全文');
+  });
+
+  it('generate 自定义场景无选区：original 为空（无 diff）', () => {
+    const r = buildSceneRequest(generateScene, { selected: '', fullContent: '全文', formatId: 'md' });
+    expect(r.original).toBe('');
+  });
+
+  it('格式注入到自定义场景 systemPrompt', () => {
+    const r = buildSceneRequest(rewriteScene, { selected: 'x', formatId: 'md' });
     expect(r.systemPrompt).toContain('Markdown');
   });
 });

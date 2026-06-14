@@ -1,26 +1,43 @@
 const invoke = () => window.__TAURI__.core.invoke;
 
-// 预设AI动作
+// 预设 AI 动作（内置场景）。
+// labelKey 走 i18n（组件渲染用 t(action.labelKey)），label 为非 i18n 兜底；
+// behavior 决定无选区时是否取全文作 diff 原文：rewrite=改写类（可对比修改），generate=生成类（无 diff）。
 export const AI_ACTIONS = {
   continue: {
+    labelKey: 'ai.action.continue',
     label: '续写',
     icon: '▶',
+    behavior: 'generate',
     systemPrompt: '你是一个写作助手。请根据上下文自然地续写以下内容，保持风格一致。直接输出续写内容，不要解释。',
   },
   polish: {
+    labelKey: 'ai.action.polish',
     label: '润色',
     icon: '✎',
+    behavior: 'rewrite',
     systemPrompt: '你是一个写作助手。请润色以下文本，改善语法、提升表达，保持原意。直接输出润色后的内容。',
   },
   translate: {
+    labelKey: 'ai.action.translate',
     label: '翻译',
     icon: '⇄',
+    behavior: 'rewrite',
     systemPrompt: '你是一个翻译助手。请将以下文本翻译成中文（如果原文是中文则翻译成英文）。直接输出翻译结果。',
   },
   summarize: {
+    labelKey: 'ai.action.summarize',
     label: '总结',
     icon: '≡',
+    behavior: 'generate',
     systemPrompt: '你是一个写作助手。请用简洁的语言总结以下内容的要点。使用AsciiDoc格式输出。',
+  },
+  improve: {
+    labelKey: 'ai.action.improve',
+    label: '完善',
+    icon: '✦',
+    behavior: 'rewrite',
+    systemPrompt: '你是一个写作助手。请完善以下内容：在保持原意和核心观点的基础上，补充必要的细节、理顺逻辑、优化结构与表达，使其更完整、通顺、专业。直接输出完善后的完整内容。',
   },
 };
 

@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 import { linkIndex } from '../services/link-index.js';
 import { readFile } from '../services/file-service.js';
 
@@ -62,10 +63,18 @@ class TagsPanel extends LitElement {
     .header .close {
       margin-left: auto;
       cursor: pointer;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
     }
-    .header .close:hover { opacity: 1; color: var(--text-1); }
+    .header .close:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
+    .header .close svg { width: 16px; height: 16px; pointer-events: none; }
 
     /* ===== 标签云视图 ===== */
     .tags-cloud {
@@ -491,7 +500,12 @@ class TagsPanel extends LitElement {
       <div class="header">
         <span class="tab ${isCloud ? 'active' : ''}" @click=${() => { this.mode = 'cloud'; }}>${t('tags.title')}</span>
         <span class="tab ${!isCloud ? 'active' : ''}" @click=${() => { this.mode = 'manage'; }}>${t('tags.manageTitle')}</span>
-        <span class="close" @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('tags-panel-toggled', false); }}>✕</span>
+        <span class="close" role="button" tabindex="0" title="${t('panel.collapseWithName', { name: t('tags.title') })}" @keydown=${activateOnKey} @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('tags-panel-toggled', false); }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+        </span>
       </div>
       ${isCloud ? this._renderCloud() : this._renderManage()}
     `;

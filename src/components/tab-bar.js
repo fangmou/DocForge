@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { editorState, untitledName } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 import { showSaveConfirm } from '../services/dialog.js';
 
 class TabBar extends LitElement {
@@ -56,6 +57,10 @@ class TabBar extends LitElement {
       color: var(--accent);
       font-size: 8px;
     }
+    .tab .conflict {
+      color: var(--color-error);
+      font-size: 8px;
+    }
     .tab .close {
       display: flex;
       align-items: center;
@@ -64,8 +69,8 @@ class TabBar extends LitElement {
       height: 16px;
       border-radius: 3px;
       font-size: 11px;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
     }
     .tab .close:hover {
       opacity: 1;
@@ -178,6 +183,10 @@ class TabBar extends LitElement {
     e.stopPropagation();
     const items = [
       { icon: '✕', label: t('tab.close'), action: () => this._closeTab(path, { stopPropagation: () => {} }) },
+      // untitled 无磁盘实体，不提供重载
+      ...(path.startsWith('__untitled_') ? [] : [
+        { icon: '↻', label: t('tab.reloadFromDisk'), action: () => eventBus.emit('reload-from-disk', path) },
+      ]),
       { icon: '—', label: t('tab.closeOthers'), action: () => this._closeOthers(path) },
       { icon: '◯', label: t('tab.closeAll'), action: () => this._closeAll() },
       { separator: true },
@@ -222,8 +231,10 @@ class TabBar extends LitElement {
             @drop=${(e) => this._onDrop(e, f.path)}
           >
             <span class="name">${f.name}</span>
-            ${f.isDirty ? html`<span class="dirty">●</span>` : ''}
-            <span class="close" @click=${(e) => this._closeTab(f.path, e)}>✕</span>
+            ${f.hasExternalConflict
+              ? html`<span class="conflict" title="${t('tab.conflictTooltip')}">●</span>`
+              : f.isDirty ? html`<span class="dirty">●</span>` : ''}
+            <span class="close" role="button" tabindex="0" title="${t('tab.close')}" @keydown=${activateOnKey} @click=${(e) => this._closeTab(f.path, e)}>✕</span>
           </div>
         `
       )}

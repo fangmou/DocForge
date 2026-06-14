@@ -3,6 +3,7 @@ import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { linkIndex } from '../services/link-index.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 
 class OutlinePanel extends LitElement {
   static properties = {
@@ -48,11 +49,23 @@ class OutlinePanel extends LitElement {
     }
     .header .close, .header .act {
       cursor: pointer;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
       font-size: 14px;
     }
     .header .close:hover, .header .act:hover { opacity: 1; color: var(--text-1); }
+    /* close 额外加热区与图标容器（不影响 .act） */
+    .header .close {
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+    }
+    .header .close:hover { background: var(--bg-3); }
+    .header .close svg { width: 14px; height: 14px; pointer-events: none; }
     .filter-bar {
       padding: 6px 14px;
       border-bottom: 1px solid var(--border-subtle);
@@ -262,7 +275,12 @@ class OutlinePanel extends LitElement {
         <span class="actions">
           <span class="act" @click=${() => this._expandAll()} title="${t('outline.expandAll')}">⊞</span>
           <span class="act" @click=${() => this._collapseAll()} title="${t('outline.collapseAll')}">⊟</span>
-          <span class="close" @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('outline-panel-toggled', false); }}>✕</span>
+          <span class="close" role="button" tabindex="0" title="${t('panel.collapseWithName', { name: t('outline.title') })}" @keydown=${activateOnKey} @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('outline-panel-toggled', false); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <line x1="15" y1="3" x2="15" y2="21"></line>
+            </svg>
+          </span>
         </span>
       </div>
       <div class="filter-bar">

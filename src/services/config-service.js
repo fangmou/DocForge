@@ -105,6 +105,16 @@ export async function loadCustomSnippets() {
   return invoke()('load_custom_snippets');
 }
 
+// === 自定义 AI 场景 ===
+
+export async function saveCustomAiScenes(scenes) {
+  return invoke()('save_custom_ai_scenes', { scenes });
+}
+
+export async function loadCustomAiScenes() {
+  return invoke()('load_custom_ai_scenes');
+}
+
 // === 导出历史 ===
 
 export async function addExportHistory(path, format, workspacePath) {

@@ -238,6 +238,28 @@ pub struct CustomSnippet {
     pub format: String,  // "adoc" | "md" | "" (空=所有格式)
 }
 
+fn default_scene_icon() -> String {
+    "✦".into()
+}
+
+fn default_scene_behavior() -> String {
+    "rewrite".into()
+}
+
+/// 用户自定义 AI 场景（与前端内置 AI_ACTIONS 同构：systemPrompt + behavior）。
+/// rename_all=camelCase 让 system_prompt ↔ systemPrompt，前端可统一按 camelCase 访问。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomAiScene {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_scene_icon")]
+    pub icon: String,  // emoji/字符，默认 "✦"
+    pub system_prompt: String,
+    #[serde(default = "default_scene_behavior")]
+    pub behavior: String,  // "rewrite"（默认，有原文可对比修改）| "generate"
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
@@ -250,6 +272,7 @@ pub struct AppConfig {
     pub export_history: Vec<ExportRecord>,
     pub shortcuts: HashMap<String, String>,
     pub custom_snippets: Vec<CustomSnippet>,
+    pub custom_ai_scenes: Vec<CustomAiScene>,
 }
 
 impl Default for AppConfig {
@@ -264,6 +287,7 @@ impl Default for AppConfig {
             export_history: Vec::new(),
             shortcuts: HashMap::new(),
             custom_snippets: Vec::new(),
+            custom_ai_scenes: Vec::new(),
         }
     }
 }

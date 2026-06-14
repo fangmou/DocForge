@@ -7,9 +7,11 @@ image:https://img.shields.io/badge/license-GPLv3-blue[License]
 image:https://img.shields.io/badge/Tauri-v2-orange[Tauri]
 image:https://img.shields.io/badge/Lit-3-blueviolet[Lit]
 
-**AI 原生、可扩展的本地 AsciiDoc 编辑器 — 为思想工程师而造**
+**AI 原生、可扩展的本地文本编辑器 — 为思想工程师而造**
 
 > 写作，本应如工程。
+
+🌐 官网：http://www.fangmou.com/docforge
 
 toc::[]
 
@@ -19,7 +21,7 @@ toc::[]
 
 == 功能亮点
 
-- **AsciiDoc 编辑器**：CodeMirror 6 + 25+ 语法自动补全 + 实时双栏预览
+- **多格式编辑器**：CodeMirror 6 + AsciiDoc/Markdown 双格式 + 实时双栏预览
 - **AI 辅助写作**：流式续写/润色/翻译/总结，支持 OpenAI、Ollama、DeepSeek 等
 - **知识网络**：双向链接 + 反向引用 + 标签体系 + 力导向知识图谱
 - **多工作区**：项目间快捷切换（Ctrl+Alt+1~9），自动恢复上次状态
@@ -29,7 +31,7 @@ toc::[]
 - **中英双语**：完整的国际化支持，新增语言只需添加 JSON 文件
 - **全平台**：Linux / Windows / macOS
 
-全部 32 项功能需求已完成，详见 link:docs/requirements/README.adoc[需求追踪]。
+全部功能需求已完成，详见 link:docs/requirements/README.adoc[需求追踪]。
 
 == 技术栈
 
@@ -78,7 +80,7 @@ DocForge/
 == 文档目录
 
 - link:docs/architecture.adoc[架构文档] — 技术架构、数据流、IPC 命令、插件扩展点
-- link:docs/requirements/README.adoc[需求追踪] — 32 项功能列表与完成状态
+- link:docs/requirements/README.adoc[需求追踪] — 功能列表与完成状态
 - link:docs/deployment/README.adoc[部署运维] — 环境搭建、构建、打包
 - link:docs/_partials/ipc-reference/README.adoc[IPC 参考] — 全部 Tauri 命令接口
 - link:docs/_partials/plugin-reference/README.adoc[插件参考] — 扩展点与插件开发

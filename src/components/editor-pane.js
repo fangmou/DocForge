@@ -701,6 +701,7 @@ class EditorPane extends LitElement {
       'editor-insert-snippet': ({ template, isInline }) => { if (this._view) insertSnippet(this._view, template, isInline); },
       'goto-line': () => this._showGotoLine(),
       'open-external-file': (path) => this._openExternalFile(path),
+      'reload-from-disk': (path) => this._reloadFromDiskPath(path),
       'preview-visibility-changed': (v) => { this._previewVisible = v; },
       'view-mode-changed': (mode) => {
         this._viewMode = mode;
@@ -1430,14 +1431,43 @@ class EditorPane extends LitElement {
       if (mtime !== this._fileMtime) {
         const reload = await showConfirm(t('editor.fileChanged'));
         if (reload) {
-          const content = await readFile(this._currentPath);
-          this._setEditorContent(content);
-          editorState.updateContent(this._currentPath, content);
-          eventBus.emit('content-changed', content);
+          await this._reloadFromDisk();
+        } else {
+          // 用户拒绝重载：标记冲突（保存会覆盖外部改动），并更新 mtime 避免同一版本反复弹框。
+          // 文件若再次被外部修改（mtime 再次变化）会重新提示；
+          // 用户可随时通过 tab 红点 / 状态栏手动「从磁盘重新加载」反悔。
+          editorState.markExternalConflict(this._currentPath, true);
+          this._fileMtime = mtime;
         }
-        this._fileMtime = mtime;
       }
     } catch (_) {}
+  }
+
+  /** 从磁盘重新加载当前文件（接受外部修改）：内容覆盖内存并视为干净，清除冲突标记 */
+  async _reloadFromDisk() {
+    if (!this._currentPath || this._currentPath.startsWith('__untitled_')) return;
+    if (this._isBinary) return;
+    try {
+      const content = await readFile(this._currentPath);
+      this._setEditorContent(content);
+      // reloadContent 同步内存内容、清 isDirty 与 hasExternalConflict（内容已与磁盘一致）
+      editorState.reloadContent(this._currentPath, content);
+      eventBus.emit('content-changed', content);
+      this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
+    } catch (_) {}
+  }
+
+  /** 手动触发某文件从磁盘重新加载（tab 右键 / 状态栏点击）：先切到目标 tab 再重载 */
+  async _reloadFromDiskPath(path) {
+    if (!path) return;
+    if (path !== this._currentPath) {
+      const file = editorState.getFile(path);
+      if (!file) return;
+      editorState.setActiveFile(path);
+      // emit 后 _openFile 同步设置 _currentPath；_reloadFromDisk 内部自读 mtime，无时序依赖
+      eventBus.emit('file-opened', { path, content: file.content });
+    }
+    await this._reloadFromDisk();
   }
 
   // 滚动同步：预览滚动时跟随（scrollTop 赋值同步触发 scroll 事件）

@@ -67,25 +67,29 @@ function pickContext({ selected, fullContent }) {
   };
 }
 
-/** 改写类动作（有原文可 diff）；生成类（续写/总结）无原文 diff */
-const REWRITE_ACTIONS = new Set(['polish', 'translate']);
-
-/** 四场景：构造本轮 user 消息（纯上下文块）+ systemPrompt + original（供 diff） */
-export function buildAiRequest(actionKey, ctx) {
-  const action = AI_ACTIONS[actionKey];
-  if (!action) return null;
+/** 通用场景请求构造（内置与自定义场景同构）。
+ * scene 需含 { systemPrompt, behavior }；behavior='rewrite' 时无选区也取截断全文作 diff 原文，
+ * 使整篇润色/翻译/完善都能对比修改；generate 类无 diff。
+ */
+export function buildSceneRequest(scene, ctx) {
   const { context, original, fromSelection } = pickContext(ctx);
   const block = wrapContext(context, ctx.formatId, fromSelection);
-  // diff 仅对改写动作；无选区时用截断全文作原文，使整篇润色/翻译也能对比
   let diffOriginal = original;
-  if (!diffOriginal && REWRITE_ACTIONS.has(actionKey)) {
+  if (!diffOriginal && scene.behavior === 'rewrite') {
     diffOriginal = context;
   }
   return {
     userMessage: block || EMPTY_DOC_HINT,
-    systemPrompt: composeSystemPrompt(action, ctx.formatId),
+    systemPrompt: composeSystemPrompt(scene, ctx.formatId),
     original: diffOriginal,
   };
+}
+
+/** 内置场景：按 actionKey 查 AI_ACTIONS 后委托 buildSceneRequest（未知 key 返回 null） */
+export function buildAiRequest(actionKey, ctx) {
+  const action = AI_ACTIONS[actionKey];
+  if (!action) return null;
+  return buildSceneRequest(action, ctx);
 }
 
 /** 自由输入：instruction + 上下文块 */

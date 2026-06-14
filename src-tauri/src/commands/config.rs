@@ -494,6 +494,29 @@ pub async fn load_custom_snippets(
     Ok(lock_config!(state).custom_snippets.clone())
 }
 
+// === 自定义 AI 场景 ===
+
+#[tauri::command]
+pub async fn save_custom_ai_scenes(
+    app: tauri::AppHandle,
+    state: State<'_, std::sync::Mutex<AppState>>,
+    scenes: Vec<crate::models::config::CustomAiScene>,
+) -> Result<(), String> {
+    let mut guard = lock_config!(state);
+    guard.custom_ai_scenes = scenes;
+    let snapshot = guard.clone();
+    drop(guard);
+    persist_to_disk(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn load_custom_ai_scenes(
+    state: State<'_, std::sync::Mutex<AppState>>,
+) -> Result<Vec<crate::models::config::CustomAiScene>, String> {
+    Ok(lock_config!(state).custom_ai_scenes.clone())
+}
+
 // === 导出历史 ===
 
 #[tauri::command]

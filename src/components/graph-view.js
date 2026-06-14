@@ -3,6 +3,7 @@ import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
 import { forceLayout } from '../services/graph-layout.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 import { linkIndex } from '../services/link-index.js';
 import { readFile } from '../services/file-service.js';
 
@@ -54,11 +55,19 @@ class GraphView extends LitElement {
     .toolbar .close {
       margin-left: auto;
       cursor: pointer;
-      opacity: 0.5;
-      color: var(--text-3);
+      opacity: 0.85;
+      color: var(--text-2);
       font-size: 18px;
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
     }
-    .toolbar .close:hover { opacity: 1; color: var(--text-1); }
+    .toolbar .close:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
+    .toolbar .close svg { width: 16px; height: 16px; pointer-events: none; }
     canvas {
       flex: 1;
       cursor: grab;
@@ -282,7 +291,14 @@ class GraphView extends LitElement {
           @input=${(e) => { this.filter = e.target.value; this._draw(); }}
         />
         <span style="color:var(--text-3);font-size:11px">${this._nodes.length} ${t('graph.nodeCount')} · ${this._edges.length} ${t('graph.edgeCount')}</span>
-        <span class="close" @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('graph-panel-toggled', false); }}>✕</span>
+        <span class="close" role="button" tabindex="0" title="${t('graph.exitFullscreen')}" @keydown=${activateOnKey} @click=${() => { this.visible = false; this.classList.remove('visible'); eventBus.emit('graph-panel-toggled', false); }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3"></path>
+            <path d="M16 3v3a2 2 0 0 0 2 2h3"></path>
+            <path d="M3 16h3a2 2 0 0 1 2 2v3"></path>
+            <path d="M16 21v-3a2 2 0 0 0 2-2h3"></path>
+          </svg>
+        </span>
       </div>
       <canvas
         @mousedown=${this._onMouseDown}

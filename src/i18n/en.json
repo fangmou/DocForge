@@ -93,6 +93,7 @@
   "statusBar.openFile": "Click to open file",
   "statusBar.copyPath": "Copy path",
   "statusBar.revealInShell": "Open containing folder",
+  "statusBar.externalConflict": "Disk changed · click to reload",
 
   "preview.placeholder": "Preview — renders automatically as you edit",
 
@@ -225,8 +226,22 @@
   "ai.action.continue": "Continue",
   "ai.action.polish": "Polish",
   "ai.action.translate": "Translate",
+  "ai.action.summarize": "Summarize",
+  "ai.action.improve": "Improve",
   "ai.errorPrefix": "Error: ",
   "ai.requestFailed": "Request failed: {error}",
+  "ai.more": "More",
+  "ai.manageScenes": "Manage scenes",
+  "ai.scene.title": "Custom Scenes",
+  "ai.scene.add": "+ Add scene",
+  "ai.scene.name": "Name",
+  "ai.scene.icon": "Icon",
+  "ai.scene.prompt": "Prompt",
+  "ai.scene.promptHint": "Describe what the AI should do (used as system prompt, applied to selection or whole doc)…",
+  "ai.scene.delete": "Delete",
+  "ai.scene.confirmDelete": "Delete scene \"{name}\"?",
+  "ai.scene.empty": "No custom scenes yet. Click \"+ Add scene\" above",
+  "ai.scene.done": "Done",
 
   "search.title": "Full-text Search",
   "search.placeholder": "Search content...",
@@ -278,6 +293,8 @@
   "tab.closeAll": "Close All",
   "tab.copyPath": "Copy Path",
   "tab.revealInShell": "Reveal in File Manager",
+  "tab.reloadFromDisk": "Reload from Disk",
+  "tab.conflictTooltip": "Disk modified externally; saving overwrites it",
 
   "backlinks.title": "Backlinks",
   "backlinks.empty": "No backlinks",
@@ -296,6 +313,7 @@
   "graph.filterPlaceholder": "Filter nodes...",
   "graph.nodeCount": "nodes",
   "graph.edgeCount": "edges",
+  "graph.exitFullscreen": "Exit Fullscreen",
 
   "plugin.title": "Plugin Manager",
   "plugin.empty": "Place plugins in .docforge/plugins/ directory",
@@ -316,6 +334,10 @@
   "search.all": "All",
   "search.byWord": "By word",
   "search.close": "Close",
+  "panel.collapse": "Collapse",
+  "dialog.close": "Close",
+  "panel.collapseWithName": "Collapse {name}",
+  "template.title": "Templates",
 
   "exportHistory.title": "Export History",
   "exportHistory.empty": "No export history",

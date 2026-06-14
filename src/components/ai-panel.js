@@ -2,12 +2,15 @@ import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { AI_ACTIONS, streamChatCompletion, loadAiConfig } from '../services/ai-service.js';
 import { t } from '../services/i18n.js';
+import { activateOnKey } from '../services/a11y.js';
 import { approxMessagesTokens } from '../services/token-count.js';
-import { buildAiRequest, buildCustomRequest } from '../services/ai-context.js';
+import { buildAiRequest, buildCustomRequest, buildSceneRequest } from '../services/ai-context.js';
+import { loadCustomAiScenes } from '../services/config-service.js';
 import { compactMessages } from '../services/ai-compact.js';
 import { getFormat } from '../services/format-commands.js';
 import { editorState } from '../services/editor-state.js';
 import './ai-diff-view.js';
+import './ai-scene-manager.js';
 
 class AiPanel extends LitElement {
   static properties = {
@@ -46,28 +49,41 @@ class AiPanel extends LitElement {
       color: var(--text-1);
     }
     .header .close {
-      margin-left: auto;
       cursor: pointer;
-      opacity: 0.5;
+      /* 默认即高对比，缩小与系统窗口关闭按钮的视觉落差，降低误关整窗的概率 */
+      opacity: 0.85;
       font-size: 16px;
-      color: var(--text-3);
-      transition: opacity 0.15s;
+      color: var(--text-2);
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      /* 扩大点击热区（16px 字符 → 24px），减少点偏到右上角系统关闭按钮的可能 */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
     }
-    .header .close:hover { opacity: 1; color: var(--text-1); }
+    .header .close:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
+    .header .close svg { width: 16px; height: 16px; pointer-events: none; }
     .header .token-count {
       font-weight: 400;
       font-size: 11px;
       color: var(--text-3);
     }
-    .actions {
-      display: flex;
-      gap: 4px;
-      padding: 8px 14px;
+    .actions-wrap {
+      position: relative;
       border-bottom: 1px solid var(--border-subtle);
     }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 8px 14px;
+    }
     .action-btn {
-      flex: 1;
-      padding: 6px 8px;
+      flex: 1 1 calc(33.333% - 4px);
+      min-width: 0;
+      padding: 6px 4px;
       border: 1px solid var(--border-subtle);
       border-radius: 4px;
       background: var(--bg-3);
@@ -86,6 +102,52 @@ class AiPanel extends LitElement {
       color: white;
       border-color: var(--accent);
     }
+    .header .gear {
+      margin-left: auto;
+      cursor: pointer;
+      opacity: 0.85;
+      font-size: 15px;
+      color: var(--text-2);
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+    }
+    .header .gear:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
+    .more-menu {
+      position: absolute;
+      top: 100%;
+      left: 14px;
+      right: 14px;
+      background: var(--bg-2);
+      border: 1px solid var(--border-medium);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      z-index: 50;
+      padding: 4px;
+    }
+    .more-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      padding: 6px 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 12px;
+      text-align: left;
+      border-radius: 4px;
+    }
+    .more-item:hover { background: var(--border-subtle); color: var(--text-1); }
+    .more-item.manage { color: var(--text-3); }
+    .more-icon { display: inline-block; min-width: 16px; text-align: center; }
+    .more-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+    .more-empty { padding: 10px 8px; font-size: 11px; color: var(--text-3); text-align: center; line-height: 1.5; }
     .content {
       flex: 1;
       overflow-y: auto;
@@ -236,6 +298,16 @@ class AiPanel extends LitElement {
     this._mergeView = null;
     this._currentFormatId = null;
     this._contextLimit = 100000;
+    // 自定义 AI 场景 + 「更多」下拉 + 场景管理 overlay 状态
+    this._customScenes = [];
+    this._moreOpen = false;
+    this._sceneMgrOpen = false;
+    // per-tab 对话历史：每个打开的文件维护独立 AI 对话，切换 tab 时切换历史
+    this._messagesByPath = new Map();
+    this._activePath = null;
+    // 流式输出绑定到发起它的 tab：中途切 tab 不串台，切回仍可见
+    this._streamingMessages = null;
+    this._streamingPath = null;
   }
 
   connectedCallback() {
@@ -265,6 +337,18 @@ class AiPanel extends LitElement {
     this._currentFormatId = getFormat(editorState.activeFilePath)?.id || null;
     this._formatHandler = (format) => { this._currentFormatId = format?.id || null; };
     eventBus.on('file-format-changed', this._formatHandler);
+    // per-tab 对话历史：绑定活动文件，切换 tab 时切换历史
+    this._activePath = editorState.activeFilePath;
+    this._fileOpenedHandler = ({ path }) => this._onFileOpened(path);
+    eventBus.on('file-opened', this._fileOpenedHandler);
+    this._fileClosedHandler = (path) => this._messagesByPath.delete(path);
+    eventBus.on('file-closed', this._fileClosedHandler);
+    this._fileRenamedHandler = ({ oldPath, newPath }) => this._onFileRenamed(oldPath, newPath);
+    eventBus.on('file-renamed', this._fileRenamedHandler);
+    // 自定义 AI 场景：加载已保存的，并监听管理组件的变更广播
+    this._scenesHandler = (scenes) => { this._customScenes = Array.isArray(scenes) ? scenes : []; this.requestUpdate(); };
+    eventBus.on('ai-scenes-changed', this._scenesHandler);
+    loadCustomAiScenes().then((s) => { this._customScenes = s || []; }).catch(() => {});
     // 加载上下文上限配置（compact 阈值）
     loadAiConfig().then((ai) => { this._contextLimit = ai?.context_limit || 100000; }).catch(() => {});
   }
@@ -275,23 +359,50 @@ class AiPanel extends LitElement {
     if (this._forceCloseHandler) eventBus.off('force-close-all-panels', this._forceCloseHandler);
     if (this._langHandler) eventBus.off('language-changed', this._langHandler);
     if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
+    if (this._fileOpenedHandler) eventBus.off('file-opened', this._fileOpenedHandler);
+    if (this._fileClosedHandler) eventBus.off('file-closed', this._fileClosedHandler);
+    if (this._fileRenamedHandler) eventBus.off('file-renamed', this._fileRenamedHandler);
+    if (this._scenesHandler) eventBus.off('ai-scenes-changed', this._scenesHandler);
     this._tauriUnlisten?.then(fn => fn());
   }
 
+  /** 活动文件切换：保存当前 tab 历史，载入目标 tab 历史 */
+  _onFileOpened(path) {
+    if (path === this._activePath) return;
+    // 当前 tab 的 messages 可能被流式/追加重新赋值过，回写到 Map
+    if (this._activePath != null) this._messagesByPath.set(this._activePath, this.messages);
+    this._activePath = path;
+    this.messages = this._messagesByPath.get(path) || [];
+    this.requestUpdate();
+  }
+
+  /** 文件重命名：历史与流式绑定迁移到新 path */
+  _onFileRenamed(oldPath, newPath) {
+    if (this._messagesByPath.has(oldPath)) {
+      this._messagesByPath.set(newPath, this._messagesByPath.get(oldPath));
+      this._messagesByPath.delete(oldPath);
+    }
+    if (this._activePath === oldPath) this._activePath = newPath;
+    if (this._streamingPath === oldPath) this._streamingPath = newPath;
+  }
+
   _handleStreamChunk(payload) {
+    // 流式目标：发起流式时的 tab 历史（中途切 tab 时 token 仍写入原 tab，切回可见）
+    const arr = this._streamingMessages || this.messages;
+    const visible = arr === this.messages;
     if (payload.kind === 'token') {
       this._streamBuffer += payload.content;
-      if (this.messages.length > 0) {
-        const last = this.messages[this.messages.length - 1];
+      if (arr.length > 0) {
+        const last = arr[arr.length - 1];
         if (last.role === 'assistant') {
           last.content = this._streamBuffer;
-          this.requestUpdate();
+          if (visible) this.requestUpdate();
         }
       }
     } else if (payload.kind === 'done') {
       this.isStreaming = false;
-      if (this.messages.length > 0) {
-        const last = this.messages[this.messages.length - 1];
+      if (arr.length > 0) {
+        const last = arr[arr.length - 1];
         // 统一去掉 AI 输出首尾换行：让消息体显示、对比修改、插入编辑器三者一致
         if (last.role === 'assistant' && last.content) {
           last.content = last.content.replace(/^\n+|\n+$/g, '');
@@ -303,11 +414,17 @@ class AiPanel extends LitElement {
           this._pendingDiffOriginal = '';
           this._pendingDiffRange = null;
         }
-        this.requestUpdate();
       }
+      this._streamingMessages = null;
+      this._streamingPath = null;
+      this.requestUpdate();
     } else if (payload.kind === 'error') {
       this.isStreaming = false;
-      this.messages = [...this.messages, { role: 'assistant', content: `${t('ai.errorPrefix')}${payload.content}` }];
+      arr.push({ role: 'assistant', content: `${t('ai.errorPrefix')}${payload.content}` });
+      if (this._streamingPath != null) this._messagesByPath.set(this._streamingPath, arr);
+      this._streamingMessages = null;
+      this._streamingPath = null;
+      this.requestUpdate();
     }
   }
 
@@ -315,10 +432,15 @@ class AiPanel extends LitElement {
     this._pendingDiffOriginal = original;
     // 仅对有原文的改写记录范围，供「接受」精确还原原选区
     this._pendingDiffRange = original ? range : null;
-    this.messages = [...this.messages,
+    // push（保持引用）：让 _messagesByPath 与 this.messages 始终同一引用，切 tab 不脱节
+    this.messages.push(
       { role: 'user', content: userMessage, label },
       { role: 'assistant', content: '' },
-    ];
+    );
+    // 绑定流式目标到当前 tab：中途切 tab 时 token 仍写入此 tab 的历史
+    this._streamingMessages = this.messages;
+    this._streamingPath = this._activePath;
+    if (this._activePath != null) this._messagesByPath.set(this._activePath, this.messages);
     this.isStreaming = true;
     this._streamBuffer = '';
 
@@ -330,7 +452,12 @@ class AiPanel extends LitElement {
 
     streamChatCompletion(compacted, systemPrompt).catch((e) => {
       this.isStreaming = false;
-      this.messages = [...this.messages, { role: 'assistant', content: t('ai.requestFailed', { error: e }) }];
+      const arr = this._streamingMessages || this.messages;
+      arr.push({ role: 'assistant', content: t('ai.requestFailed', { error: e }) });
+      if (this._streamingPath != null) this._messagesByPath.set(this._streamingPath, arr);
+      this._streamingMessages = null;
+      this._streamingPath = null;
+      if (arr === this.messages) this.requestUpdate();
     });
   }
 
@@ -360,9 +487,9 @@ class AiPanel extends LitElement {
     this.activeAction = actionKey;
     const selected = this._getSelectedText();
     const fullContent = this._getFullContent();
-    // 选中→选区范围；整篇改写（润色/翻译）→整篇范围，供「接受」精确替换
+    // 选中→选区范围；整篇改写类（behavior=rewrite）→整篇范围，供「接受」精确替换
     let range = selected ? this._getSelectionRange() : null;
-    if (!selected && (actionKey === 'polish' || actionKey === 'translate') && fullContent) {
+    if (!selected && action.behavior === 'rewrite' && fullContent) {
       range = { from: 0, to: fullContent.length };
     }
     const req = buildAiRequest(actionKey, {
@@ -371,7 +498,27 @@ class AiPanel extends LitElement {
       formatId: this._currentFormatId,
     });
     if (!req) return;
-    const label = `${action.label}（${selected ? '选中文本' : '整篇文档'}）`;
+    const label = `${t(action.labelKey)}（${selected ? '选中文本' : '整篇文档'}）`;
+    this._startStreaming(req.userMessage, req.systemPrompt, req.original, range, label);
+  }
+
+  /** 自定义场景：与内置场景同构，走 buildSceneRequest */
+  _executeScene(scene) {
+    if (!scene || this.isStreaming) return;
+    this._moreOpen = false;
+    this.activeAction = scene.id;
+    const selected = this._getSelectedText();
+    const fullContent = this._getFullContent();
+    let range = selected ? this._getSelectionRange() : null;
+    if (!selected && scene.behavior === 'rewrite' && fullContent) {
+      range = { from: 0, to: fullContent.length };
+    }
+    const req = buildSceneRequest(scene, {
+      selected,
+      fullContent,
+      formatId: this._currentFormatId,
+    });
+    const label = `${scene.name}（${selected ? '选中文本' : '整篇文档'}）`;
     this._startStreaming(req.userMessage, req.systemPrompt, req.original, range, label);
   }
 
@@ -416,18 +563,48 @@ class AiPanel extends LitElement {
         ${this.messages.length > 0
           ? html`<span class="token-count">≈${approxMessagesTokens(this.messages)} tokens</span>`
           : ''}
-        <span class="close" @click=${() => { this.classList.remove('visible'); eventBus.emit('ai-panel-toggled', false); }}>✕</span>
+        <span class="gear" @click=${() => { this._sceneMgrOpen = true; this._moreOpen = false; this.requestUpdate(); }} title="${t('ai.manageScenes')}">⚙</span>
+        <span class="close" role="button" tabindex="0" title="${t('panel.collapseWithName', { name: t('ai.title') })}" @keydown=${activateOnKey} @click=${() => { this.classList.remove('visible'); eventBus.emit('ai-panel-toggled', false); }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+        </span>
       </div>
-      <div class="actions">
-        ${Object.entries(AI_ACTIONS).map(([key, action]) => html`
+      <div class="actions-wrap">
+        <div class="actions">
+          ${Object.entries(AI_ACTIONS).map(([key, action]) => html`
+            <button
+              class="action-btn ${this.activeAction === key ? 'active' : ''}"
+              @click=${() => this._executeAction(key)}
+              ?disabled=${this.isStreaming}
+            >
+              ${action.icon} ${t(action.labelKey)}
+            </button>
+          `)}
           <button
-            class="action-btn ${this.activeAction === key ? 'active' : ''}"
-            @click=${() => this._executeAction(key)}
+            class="action-btn ${this._moreOpen ? 'active' : ''}"
+            @click=${() => { this._moreOpen = !this._moreOpen; this.requestUpdate(); }}
             ?disabled=${this.isStreaming}
           >
-            ${action.icon} ${action.label}
+            ${t('ai.more')} ⌄
           </button>
-        `)}
+        </div>
+        ${this._moreOpen ? html`
+          <div class="more-menu">
+            ${this._customScenes.length === 0
+              ? html`<div class="more-empty">${t('ai.scene.empty')}</div>`
+              : this._customScenes.map((scene) => html`
+                <button class="more-item" @click=${() => this._executeScene(scene)}>
+                  <span class="more-icon">${scene.icon || '✦'}</span>${scene.name}
+                </button>
+              `)}
+            <div class="more-divider"></div>
+            <button class="more-item manage" @click=${() => { this._moreOpen = false; this._sceneMgrOpen = true; this.requestUpdate(); }}>
+              ⚙ ${t('ai.manageScenes')}
+            </button>
+          </div>
+        ` : ''}
       </div>
       <div class="content">
         ${this.messages.length === 0
@@ -462,6 +639,12 @@ class AiPanel extends LitElement {
             @reject=${() => this._cancelDiff()}
           ></ai-diff-view>
         </div>
+      ` : ''}
+      ${this._sceneMgrOpen ? html`
+        <ai-scene-manager
+          .scenes=${this._customScenes}
+          @close=${() => { this._sceneMgrOpen = false; this.requestUpdate(); }}
+        ></ai-scene-manager>
       ` : ''}
     `;
   }
