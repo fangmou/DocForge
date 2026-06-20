@@ -114,6 +114,7 @@
   "dialog.cancel": "取消",
   "dialog.save": "保存",
   "dialog.discard": "不保存",
+  "dialog.compareUnsaved": "对比修改",
   "dialog.unsavedChanges": "文件有未保存的修改，是否保存？",
   "dialog.unsavedChangesFile": "「{name}」有未保存的修改，是否保存？",
 
@@ -230,6 +231,7 @@
   "ai.action.improve": "完善",
   "ai.errorPrefix": "错误: ",
   "ai.requestFailed": "请求失败: {error}",
+  "ai.truncated": "输出已达最大 Tokens 上限被截断，可在设置中将「最大 Tokens」调大或设为 0（不限）",
   "ai.more": "更多",
   "ai.manageScenes": "管理自定义场景",
   "ai.scene.title": "自定义场景",
@@ -294,6 +296,10 @@
   "tab.copyPath": "复制路径",
   "tab.revealInShell": "在文件管理器中显示",
   "tab.reloadFromDisk": "从磁盘重新加载",
+  "tab.compareUnsaved": "对比未保存改动",
+  "diff.unsaved.title": "未保存修改对比",
+  "diff.unsaved.left": "磁盘版本",
+  "diff.unsaved.right": "编辑区版本",
   "tab.conflictTooltip": "磁盘已被外部修改，保存将覆盖外部改动",
 
   "backlinks.title": "反向链接",

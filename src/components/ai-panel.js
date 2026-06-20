@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
-import { AI_ACTIONS, streamChatCompletion, loadAiConfig } from '../services/ai-service.js';
+import { AI_ACTIONS, streamChatCompletion, loadAiConfig, stripFenceWrapper } from '../services/ai-service.js';
 import { t } from '../services/i18n.js';
 import { activateOnKey } from '../services/a11y.js';
 import { approxMessagesTokens } from '../services/token-count.js';
@@ -72,7 +72,7 @@ class AiPanel extends LitElement {
     }
     .actions-wrap {
       position: relative;
-      border-bottom: 1px solid var(--border-subtle);
+      border-top: 1px solid var(--border-subtle);
     }
     .actions {
       display: flex;
@@ -119,9 +119,9 @@ class AiPanel extends LitElement {
     .header .gear:hover { opacity: 1; color: var(--text-1); background: var(--bg-3); }
     .more-menu {
       position: absolute;
-      top: 100%;
-      left: 14px;
-      right: 14px;
+      bottom: 100%;
+      right: 0;
+      min-width: 180px;
       background: var(--bg-2);
       border: 1px solid var(--border-medium);
       border-radius: 6px;
@@ -163,6 +163,28 @@ class AiPanel extends LitElement {
       word-break: break-word;
     }
     .msg-body { white-space: pre-wrap; }
+    .typing-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 14px;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      background: var(--accent);
+      border-radius: 1px;
+      animation: typing-blink 1s steps(2, start) infinite;
+    }
+    @keyframes typing-blink { 50% { opacity: 0; } }
+    .msg-actions { margin-top: 6px; display: flex; gap: 6px; }
+    .msg-truncated {
+      margin-top: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #b54708;
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 6px;
+    }
     .message.user {
       background: var(--accent);
       color: #fff;
@@ -187,6 +209,27 @@ class AiPanel extends LitElement {
       gap: 6px;
       border-top: 1px solid var(--border-subtle);
     }
+    .input-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .act-mini {
+      padding: 5px 8px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      background: var(--bg-3);
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .act-mini:hover { background: var(--border-subtle); color: var(--text-1); }
+    .act-mini.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .act-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+    .more-wrap { position: relative; }
+    .more-wrap .act-mini { width: 100%; box-sizing: border-box; }
     textarea {
       flex: 1;
       padding: 8px 10px;
@@ -204,24 +247,29 @@ class AiPanel extends LitElement {
       border-color: var(--accent);
     }
     .send-btn {
-      align-self: flex-end;
       padding: 8px 16px;
-      background: var(--accent);
-      color: white;
-      border: none;
+      background: var(--bg-3);
+      color: var(--text-2);
+      border: 1px solid var(--border-medium);
       border-radius: 6px;
       cursor: pointer;
       font-size: 12px;
-      transition: background 0.15s;
+      transition: all 0.15s;
     }
-    .send-btn:hover { background: var(--accent-hover); }
+    .send-btn:hover { background: var(--border-subtle); color: var(--text-1); }
+    .send-btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .send-btn.primary:hover { background: var(--accent-hover); color: white; }
     .send-btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
     .insert-btn {
       display: inline-block;
-      margin-top: 6px;
+      margin-top: 0;
       padding: 3px 8px;
       font-size: 11px;
       background: var(--accent);
@@ -229,6 +277,11 @@ class AiPanel extends LitElement {
       border: none;
       border-radius: 4px;
       cursor: pointer;
+    }
+    .insert-btn.secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
     }
     .insert-btn:hover { background: var(--accent-hover); }
     .empty {
@@ -363,6 +416,7 @@ class AiPanel extends LitElement {
     if (this._fileClosedHandler) eventBus.off('file-closed', this._fileClosedHandler);
     if (this._fileRenamedHandler) eventBus.off('file-renamed', this._fileRenamedHandler);
     if (this._scenesHandler) eventBus.off('ai-scenes-changed', this._scenesHandler);
+    if (this._moreDocHandler) { document.removeEventListener('click', this._moreDocHandler, true); this._moreDocHandler = null; }
     this._tauriUnlisten?.then(fn => fn());
   }
 
@@ -405,7 +459,8 @@ class AiPanel extends LitElement {
         const last = arr[arr.length - 1];
         // 统一去掉 AI 输出首尾换行：让消息体显示、对比修改、插入编辑器三者一致
         if (last.role === 'assistant' && last.content) {
-          last.content = last.content.replace(/^\n+|\n+$/g, '');
+          // 先兜底剥掉模型偶发的整体代码围栏（```adoc … ```），再去首尾换行
+          last.content = stripFenceWrapper(last.content).replace(/^\n+|\n+$/g, '');
         }
         // 给最后一条 assistant 消息附上原文与选区范围，供「对比修改/接受」使用
         if (last.role === 'assistant' && this._pendingDiffOriginal) {
@@ -418,6 +473,13 @@ class AiPanel extends LitElement {
       this._streamingMessages = null;
       this._streamingPath = null;
       this.requestUpdate();
+    } else if (payload.kind === 'truncated') {
+      // 标记最后一条 assistant 消息被截断（独立标志，不混入 content，避免污染对比修改/插入）
+      if (arr.length > 0) {
+        const last = arr[arr.length - 1];
+        if (last.role === 'assistant') last.truncated = true;
+      }
+      if (visible) this.requestUpdate();
     } else if (payload.kind === 'error') {
       this.isStreaming = false;
       arr.push({ role: 'assistant', content: `${t('ai.errorPrefix')}${payload.content}` });
@@ -480,6 +542,34 @@ class AiPanel extends LitElement {
     return editor?.getDocumentContent?.() || '';
   }
 
+  _toggleMore() {
+    this._moreOpen = !this._moreOpen;
+    this.requestUpdate();
+    if (this._moreOpen) {
+      // 延迟绑 document click：点 more-wrap 外部关闭菜单（setTimeout 避开本次按钮 click）
+      setTimeout(() => {
+        this._moreDocHandler = (e) => {
+          if (!this._moreOpen) {
+            document.removeEventListener('click', this._moreDocHandler, true);
+            this._moreDocHandler = null;
+            return;
+          }
+          const wrap = this.renderRoot.querySelector('.more-wrap');
+          if (wrap && !e.composedPath().includes(wrap)) {
+            this._moreOpen = false;
+            this.requestUpdate();
+            document.removeEventListener('click', this._moreDocHandler, true);
+            this._moreDocHandler = null;
+          }
+        };
+        document.addEventListener('click', this._moreDocHandler, true);
+      }, 0);
+    } else if (this._moreDocHandler) {
+      document.removeEventListener('click', this._moreDocHandler, true);
+      this._moreDocHandler = null;
+    }
+  }
+
   _executeAction(actionKey) {
     const action = AI_ACTIONS[actionKey];
     if (!action || this.isStreaming) return;
@@ -490,7 +580,8 @@ class AiPanel extends LitElement {
     // 选中→选区范围；整篇改写类（behavior=rewrite）→整篇范围，供「接受」精确替换
     let range = selected ? this._getSelectionRange() : null;
     if (!selected && action.behavior === 'rewrite' && fullContent) {
-      range = { from: 0, to: fullContent.length };
+      // fullDoc 标记区分「整篇改写」与「选区改写」（选区也可能从 0 起），供 _showDiff 判定
+      range = { from: 0, to: fullContent.length, fullDoc: true };
     }
     const req = buildAiRequest(actionKey, {
       selected,
@@ -498,6 +589,13 @@ class AiPanel extends LitElement {
       formatId: this._currentFormatId,
     });
     if (!req) return;
+    // 场景按钮也带上输入框内容（与「发送」统一：场景即「预设指令的发送」）
+    const extra = (this._customInput || '').trim();
+    if (extra) {
+      req.userMessage = `${extra}\n\n${req.userMessage}`;
+      this._customInput = '';
+      this.requestUpdate();
+    }
     const label = `${t(action.labelKey)}（${selected ? '选中文本' : '整篇文档'}）`;
     this._startStreaming(req.userMessage, req.systemPrompt, req.original, range, label);
   }
@@ -511,7 +609,7 @@ class AiPanel extends LitElement {
     const fullContent = this._getFullContent();
     let range = selected ? this._getSelectionRange() : null;
     if (!selected && scene.behavior === 'rewrite' && fullContent) {
-      range = { from: 0, to: fullContent.length };
+      range = { from: 0, to: fullContent.length, fullDoc: true };
     }
     const req = buildSceneRequest(scene, {
       selected,
@@ -526,6 +624,8 @@ class AiPanel extends LitElement {
     const instruction = this._customInput?.trim();
     if (!instruction || this.isStreaming) return;
     this._customInput = '';
+    // 发送=自定义指令（非场景），清场景高亮，发送回归 primary
+    this.activeAction = '';
     const selected = this._getSelectedText();
     const range = selected ? this._getSelectionRange() : null;
     const req = buildCustomRequest(instruction, {
@@ -537,9 +637,18 @@ class AiPanel extends LitElement {
   }
 
   _showDiff(msg) {
-    this._diffOriginal = msg.diffOriginal || '';
+    this._diffMsg = msg;
+    // 整篇改写（fullDoc 标记）：基于「当前编辑区」对比（点击前可能已手工调整），让差异反映真实待应用状态。
+    // 不能用 from===0 判定——选区改写选中文档开头时 from 同样为 0，会误进此分支覆盖全文。
+    if (msg.diffRange?.fullDoc) {
+      const currentFull = this._getFullContent();
+      this._diffOriginal = currentFull;
+      this._diffRange = { from: 0, to: currentFull.length };
+    } else {
+      this._diffOriginal = msg.diffOriginal || '';
+      this._diffRange = msg.diffRange || null;
+    }
     this._diffProposed = msg.content || '';
-    this._diffRange = msg.diffRange || null;
     this._diffVisible = true;
     this.requestUpdate();
   }
@@ -547,7 +656,21 @@ class AiPanel extends LitElement {
   _acceptDiff(text) {
     // 接受：用（经逐块取舍的）结果替换原始范围
     eventBus.emit('ai-insert-text', { text, range: this._diffRange });
+    // 标记该消息已应用：移除「对比修改」按钮，避免用旧 range 重复对编辑区操作
+    if (this._diffMsg) {
+      this._diffMsg.diffOriginal = null;
+      this._diffMsg.diffRange = null;
+      this._diffMsg.applied = true;
+    }
+    this._diffMsg = null;
     this._diffVisible = false;
+    this.requestUpdate();
+  }
+
+  _insertMessage(msg) {
+    eventBus.emit('ai-insert-text', msg.content);
+    // 标记已用：移除「插入编辑器/对比修改」，避免重复插入
+    msg.applied = true;
     this.requestUpdate();
   }
 
@@ -571,52 +694,22 @@ class AiPanel extends LitElement {
           </svg>
         </span>
       </div>
-      <div class="actions-wrap">
-        <div class="actions">
-          ${Object.entries(AI_ACTIONS).map(([key, action]) => html`
-            <button
-              class="action-btn ${this.activeAction === key ? 'active' : ''}"
-              @click=${() => this._executeAction(key)}
-              ?disabled=${this.isStreaming}
-            >
-              ${action.icon} ${t(action.labelKey)}
-            </button>
-          `)}
-          <button
-            class="action-btn ${this._moreOpen ? 'active' : ''}"
-            @click=${() => { this._moreOpen = !this._moreOpen; this.requestUpdate(); }}
-            ?disabled=${this.isStreaming}
-          >
-            ${t('ai.more')} ⌄
-          </button>
-        </div>
-        ${this._moreOpen ? html`
-          <div class="more-menu">
-            ${this._customScenes.length === 0
-              ? html`<div class="more-empty">${t('ai.scene.empty')}</div>`
-              : this._customScenes.map((scene) => html`
-                <button class="more-item" @click=${() => this._executeScene(scene)}>
-                  <span class="more-icon">${scene.icon || '✦'}</span>${scene.name}
-                </button>
-              `)}
-            <div class="more-divider"></div>
-            <button class="more-item manage" @click=${() => { this._moreOpen = false; this._sceneMgrOpen = true; this.requestUpdate(); }}>
-              ⚙ ${t('ai.manageScenes')}
-            </button>
-          </div>
-        ` : ''}
-      </div>
       <div class="content">
         ${this.messages.length === 0
           ? html`<div class="empty">${t('ai.emptyState')}</div>`
           : this.messages.map((msg, i) => html`
             <div class="message ${msg.role}">
               <div class="label">${msg.role === 'user' ? t('ai.you') : t('ai.aiLabel')}</div>
-              <div class="msg-body">${msg.role === 'user' ? (msg.label || '（操作）') : (msg.content || '')}${msg.role === 'assistant' && msg.content && !this.isStreaming
-                ? html`<button class="insert-btn" @click=${() => eventBus.emit('ai-insert-text', msg.content)}>${t('ai.insertToEditor')}</button>${msg.diffOriginal
-                  ? html`<button class="insert-btn" @click=${() => this._showDiff(msg)}>对比修改</button>`
-                  : ''}`
-                : ''}</div>
+              <div class="msg-body">${msg.role === 'user' ? (msg.label || '（操作）') : (msg.content || '')}${msg.role === 'assistant' && this.isStreaming && i === this.messages.length - 1 ? html`<span class="typing-cursor"></span>` : ''}</div>
+              ${msg.role === 'assistant' && msg.truncated && msg.content
+                ? html`<div class="msg-truncated">⚠️ ${t('ai.truncated')}</div>`
+                : ''}
+              ${msg.role === 'assistant' && msg.content && !this.isStreaming && !msg.applied
+                ? html`<div class="msg-actions">
+                    <button class="insert-btn" @click=${() => this._insertMessage(msg)}>${t('ai.insertToEditor')}</button>
+                    ${msg.diffOriginal ? html`<button class="insert-btn secondary" @click=${() => this._showDiff(msg)}>对比修改</button>` : ''}
+                  </div>`
+                : ''}
             </div>
           `)
         }
@@ -628,7 +721,44 @@ class AiPanel extends LitElement {
           .value=${this._customInput}
           @input=${(e) => { this._customInput = e.target.value; }}
         ></textarea>
-        <button class="send-btn" ?disabled=${this.isStreaming} @click=${this._sendCustom}>${t('ai.send')}</button>
+        <div class="input-actions">
+          ${Object.entries(AI_ACTIONS).filter(([key]) => key === 'continue' || key === 'improve').map(([key, action]) => html`
+            <button
+              class="act-mini ${this.activeAction === key ? 'active' : ''}"
+              @click=${() => this._executeAction(key)}
+              ?disabled=${this.isStreaming}
+            >${action.icon} ${t(action.labelKey)}</button>
+          `)}
+          <button class="send-btn ${this.activeAction ? '' : 'primary'}" ?disabled=${this.isStreaming} @click=${this._sendCustom}>➤ ${t('ai.send')}</button>
+          <div class="more-wrap">
+            <button
+              class="act-mini ${this._moreOpen ? 'active' : ''}"
+              @click=${() => this._toggleMore()}
+              ?disabled=${this.isStreaming}
+            >⋯ ${t('ai.more')}</button>
+            ${this._moreOpen ? html`
+              <div class="more-menu">
+                ${Object.entries(AI_ACTIONS).filter(([key]) => key !== 'continue' && key !== 'improve').map(([key, action]) => html`
+                  <button class="more-item" @click=${() => { this._moreOpen = false; this._executeAction(key); }}>
+                    <span class="more-icon">${action.icon}</span>${t(action.labelKey)}
+                  </button>
+                `)}
+                <div class="more-divider"></div>
+                ${this._customScenes.length === 0
+                  ? html`<div class="more-empty">${t('ai.scene.empty')}</div>`
+                  : this._customScenes.map((scene) => html`
+                    <button class="more-item" @click=${() => this._executeScene(scene)}>
+                      <span class="more-icon">${scene.icon || '✦'}</span>${scene.name}
+                    </button>
+                  `)}
+                <div class="more-divider"></div>
+                <button class="more-item manage" @click=${() => { this._moreOpen = false; this._sceneMgrOpen = true; this.requestUpdate(); }}>
+                  ⚙ ${t('ai.manageScenes')}
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        </div>
       </div>
       ${this._diffVisible ? html`
         <div class="diff-overlay">

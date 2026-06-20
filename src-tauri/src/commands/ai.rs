@@ -43,7 +43,7 @@ pub async fn stream_chat_completion(
         .clone();
     fill_api_key(&app, &mut config);
 
-    let full_response = ai_client::stream_completion_realtime(
+    let result = ai_client::stream_completion_realtime(
         &config,
         &messages,
         system_prompt.as_deref(),
@@ -60,15 +60,26 @@ pub async fn stream_chat_completion(
     .await
     .map_err(|e| format!("AI请求失败: {}", e))?;
 
+    // 撞到 max_tokens 上限被截断：先通知前端标记当前消息，再发 done 收尾
+    if result.truncated {
+        let _ = app.emit(
+            "ai-stream-chunk",
+            StreamEvent {
+                kind: "truncated".into(),
+                content: String::new(),
+            },
+        );
+    }
+
     let _ = app.emit(
         "ai-stream-chunk",
         StreamEvent {
             kind: "done".into(),
-            content: full_response.clone(),
+            content: result.content.clone(),
         },
     );
 
-    Ok(full_response)
+    Ok(result.content)
 }
 
 #[tauri::command]

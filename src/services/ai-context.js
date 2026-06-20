@@ -11,6 +11,8 @@ import { AI_ACTIONS } from './ai-service.js';
 
 const MAX_CONTEXT_TOKENS = 6000;
 const OUTPUT_RULE = '直接输出结果，不要解释、复述原文或寒暄。';
+// 方案 B：从源头降低模型用 ```adoc / ```md 围栏包裹整篇输出的概率（方案 A 的后处理兜底仍保留）
+const FENCE_RULE = '不要用代码围栏（```…```）包裹整篇输出。';
 const EMPTY_DOC_HINT = '（当前文档为空，请直接开始写作。）';
 
 function formatName(formatId) {
@@ -53,6 +55,7 @@ export function composeSystemPrompt(action, formatId) {
     // formatId 为 null（纯文本）：去掉 summarize 的 {FMT} 占位
     base = base.replace(/使用\{FMT\}格式输出。?\s*/g, '');
   }
+  base += ` ${FENCE_RULE}`;
   return base.trim();
 }
 
@@ -102,7 +105,7 @@ export function buildCustomRequest(instruction, ctx) {
   const fmtClause = fmt ? ` 输出需遵循${fmt}语法。` : '';
   return {
     userMessage,
-    systemPrompt: `你是一个写作助手。请根据用户指令处理提供的内容。${OUTPUT_RULE}${fmtClause}`,
+    systemPrompt: `你是一个写作助手。请根据用户指令处理提供的内容。${OUTPUT_RULE} ${FENCE_RULE}${fmtClause}`,
     original,
   };
 }

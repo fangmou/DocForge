@@ -87,6 +87,11 @@ describe('composeSystemPrompt — 格式注入', () => {
     const p = composeSystemPrompt(AI_ACTIONS.summarize, 'adoc');
     expect(p).toContain('直接输出');
   });
+
+  it('注入「不要用代码围栏包裹整篇输出」约束', () => {
+    const p = composeSystemPrompt(AI_ACTIONS.polish, 'md');
+    expect(p).toContain('代码围栏');
+  });
 });
 
 describe('buildCustomRequest — 自由输入 + 上下文', () => {
@@ -114,6 +119,11 @@ describe('buildCustomRequest — 自由输入 + 上下文', () => {
   it('md 格式注入到 systemPrompt', () => {
     const r = buildCustomRequest('润色', { selected: 'x', formatId: 'md' });
     expect(r.systemPrompt).toContain('Markdown');
+  });
+
+  it('systemPrompt 注入「不要用代码围栏包裹」约束', () => {
+    const r = buildCustomRequest('润色', { selected: 'x', formatId: 'md' });
+    expect(r.systemPrompt).toContain('代码围栏');
   });
 });
 

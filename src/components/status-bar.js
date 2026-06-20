@@ -86,6 +86,7 @@ class StatusBar extends LitElement {
     }
     .indicator.dirty {
       background: var(--color-warning);
+      cursor: pointer;
     }
     .indicator.conflict {
       background: var(--color-error);
@@ -352,8 +353,12 @@ class StatusBar extends LitElement {
       <div class="left">
         ${this.filePath ? html`
           <span class="indicator ${this.isDirty ? 'dirty' : ''} ${this.hasConflict ? 'conflict' : ''}"
-                title="${this.hasConflict ? t('statusBar.externalConflict') : ''}"
-                @click=${this.hasConflict ? () => eventBus.emit('reload-from-disk', editorState.activeFilePath) : null}></span>
+                title="${this.hasConflict ? t('statusBar.externalConflict') : (this.isDirty ? t('tab.compareUnsaved') : '')}"
+                @click=${this.hasConflict
+                  ? () => eventBus.emit('reload-from-disk', editorState.activeFilePath)
+                  : this.isDirty
+                    ? () => eventBus.emit('show-unsaved-diff', editorState.activeFilePath)
+                    : null}></span>
         ` : ''}
         ${this.hasConflict ? html`
           <span class="conflict-msg stat-link"

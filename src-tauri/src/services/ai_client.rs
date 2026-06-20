@@ -13,6 +13,14 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// 流式补全结果：content 为完整文本，truncated 标记是否因撞到 max_tokens 上限被截断
+///（finish_reason == "length"）。供上层在 UI 上提示用户，而非默默截断。
+#[derive(Debug, Clone)]
+pub struct StreamResult {
+    pub content: String,
+    pub truncated: bool,
+}
+
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
 
 fn build_url(endpoint: &str, path: &str) -> String {
@@ -42,13 +50,32 @@ fn build_url(endpoint: &str, path: &str) -> String {
     format!("{}{}{}", main, path, suffix)
 }
 
+/// 解析一行 SSE 的 data 负载（已去掉 "data: " 前缀）。
+/// 返回 (增量内容, finish_reason)，二者皆可能为 None：
+/// - `[DONE]` 哨兵或解析失败 → (None, None)
+/// - 普通增量 chunk → (Some(content), None)
+/// - 末尾收尾 chunk → (None, Some("stop"|"length"|...))
+fn parse_sse_data(data: &str) -> Option<(Option<String>, Option<String>)> {
+    if data == "[DONE]" {
+        return Some((None, None));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
+    let content = parsed["choices"][0]["delta"]["content"]
+        .as_str()
+        .map(|s| s.to_string());
+    let finish = parsed["choices"][0]["finish_reason"]
+        .as_str()
+        .map(|s| s.to_string());
+    Some((content, finish))
+}
+
 /// 真流式：每个token立即通过回调推送
 pub async fn stream_completion_realtime<F>(
     config: &AiConfig,
     messages: &[ChatMessage],
     system_prompt: Option<&str>,
     mut on_token: F,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
+) -> Result<StreamResult, Box<dyn std::error::Error + Send + Sync>>
 where
     F: FnMut(&str) + Send,
 {
@@ -89,6 +116,7 @@ where
     }
 
     let mut full_response = String::new();
+    let mut truncated = false;
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
@@ -105,21 +133,25 @@ where
                 continue;
             }
             let data = &line[6..];
-            if data == "[DONE]" {
-                continue;
-            }
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                if let Some(content) = parsed["choices"][0]["delta"]["content"].as_str() {
-                    if !content.is_empty() {
-                        on_token(content);
-                        full_response.push_str(content);
+            if let Some((content, finish)) = parse_sse_data(data) {
+                if let Some(c) = content {
+                    if !c.is_empty() {
+                        on_token(&c);
+                        full_response.push_str(&c);
                     }
+                }
+                // finish_reason == "length" 表示撞到 max_tokens 上限被截断（而非自然结束）
+                if finish.as_deref() == Some("length") {
+                    truncated = true;
                 }
             }
         }
     }
 
-    Ok(full_response)
+    Ok(StreamResult {
+        content: full_response,
+        truncated,
+    })
 }
 
 pub async fn test_connection(config: &AiConfig) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
@@ -137,7 +169,36 @@ pub async fn test_connection(config: &AiConfig) -> Result<bool, Box<dyn std::err
 
 #[cfg(test)]
 mod tests {
-    use super::build_url;
+    use super::{build_url, parse_sse_data};
+
+    #[test]
+    fn parse_sse_data_token_chunk() {
+        let (content, finish) =
+            parse_sse_data(r#"{"choices":[{"delta":{"content":"你好"}}]}"#).unwrap();
+        assert_eq!(content.as_deref(), Some("你好"));
+        assert_eq!(finish, None);
+    }
+
+    #[test]
+    fn parse_sse_data_finish_length_marks_truncation() {
+        let data = r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#;
+        let (content, finish) = parse_sse_data(data).unwrap();
+        assert_eq!(content, None);
+        assert_eq!(finish.as_deref(), Some("length"));
+    }
+
+    #[test]
+    fn parse_sse_data_finish_stop() {
+        let data = r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#;
+        let (_, finish) = parse_sse_data(data).unwrap();
+        assert_eq!(finish.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn parse_sse_data_done_and_invalid() {
+        assert_eq!(parse_sse_data("[DONE]"), Some((None, None)));
+        assert_eq!(parse_sse_data("not json"), None);
+    }
 
     #[test]
     fn build_url_plain_base_keeps_v1() {

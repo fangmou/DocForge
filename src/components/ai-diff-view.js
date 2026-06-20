@@ -11,6 +11,10 @@ class AiDiffView extends LitElement {
   static properties = {
     original: { type: String },
     proposed: { type: String },
+    title: { type: String },
+    leftLabel: { type: String },
+    rightLabel: { type: String },
+    acceptLabel: { type: String },
   };
 
   static styles = css`
@@ -60,6 +64,7 @@ class AiDiffView extends LitElement {
       overflow: auto;
       display: grid;
       grid-template-columns: 1fr 32px 1fr;
+      align-content: start;
       font-family: var(--font-mono);
       font-size: 12px;
       line-height: 1.4;
@@ -79,8 +84,8 @@ class AiDiffView extends LitElement {
     .cell {
       padding: 1px 8px;
       border-bottom: 1px solid var(--border-subtle);
-      white-space: pre-wrap;
       word-break: break-word;
+      align-self: start;
     }
     .cell.equal { color: var(--text-3); }
     .cell.changed.a.will-remove { background: rgba(229,68,68,0.10); color: var(--text-2); }
@@ -130,6 +135,11 @@ class AiDiffView extends LitElement {
     super();
     this.original = '';
     this.proposed = '';
+    // 文案默认值（AI 改写场景）；未保存对比等复用场景可覆盖
+    this.title = '对比修改';
+    this.leftLabel = '原文';
+    this.rightLabel = 'AI 修改';
+    this.acceptLabel = '应用所选并关闭';
     this._chunks = [];
     this._applied = {};
   }
@@ -175,17 +185,17 @@ class AiDiffView extends LitElement {
     const applyCount = this._chunks.filter((c, i) => c.type === 'changed' && this._applied[i]).length;
     return html`
       <div class="toolbar">
-        <span class="title">对比修改</span>
+        <span class="title">${this.title}</span>
         <span class="stats">将应用 ${applyCount}/${stats.changedBlocks} 处修改（<span class="add">+${stats.added}</span> <span class="del">-${stats.removed}</span>）</span>
         <button @click=${() => this._setAll(false)}>全部用原文</button>
         <button @click=${() => this._setAll(true)}>全部用修改</button>
-        <button class="primary" @click=${this._accept}>应用所选并关闭</button>
+        <button class="primary" @click=${this._accept}>${this.acceptLabel}</button>
         <button @click=${this._reject}>取消</button>
       </div>
       <div class="body">
-        <div class="col-h">原文</div>
+        <div class="col-h">${this.leftLabel}</div>
         <div class="col-h gutter-h">采用</div>
-        <div class="col-h">AI 修改</div>
+        <div class="col-h">${this.rightLabel}</div>
         ${this._chunks.map((c, i) => this._renderChunk(c, i))}
       </div>
     `;

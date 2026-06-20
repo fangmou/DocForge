@@ -122,10 +122,9 @@ class TabBar extends LitElement {
     // 检查是否有未保存修改
     const file = editorState.getFile(path);
     if (file?.isDirty) {
-      const displayName = path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop();
-      const result = await showSaveConfirm(t('dialog.unsavedChangesFile', { name: displayName }));
-      if (result === 'cancel') return;
-      if (result === 'save') {
+      const decision = await this._resolveUnsaved(path);
+      if (decision === 'cancel') return;
+      if (decision === 'save') {
         // 先激活该 tab 再触发保存
         editorState.setActiveFile(path);
         eventBus.emit('file-opened', { path, content: file.content });
@@ -135,6 +134,7 @@ class TabBar extends LitElement {
         // 如果保存被取消（如用户在另存为对话框取消），则放弃关闭
         if (editorState.getFile(path)?.isDirty) return;
       }
+      // decision === 'discard'：直接继续关闭
     }
     editorState.closeFile(path);
     const active = editorState.getActiveFile();
@@ -143,6 +143,32 @@ class TabBar extends LitElement {
     } else {
       eventBus.emit('file-closed', path);
     }
+  }
+
+  /** 解决单个 dirty 文件的关闭决策：循环询问直到 save/discard/cancel。
+   *  选「对比修改」时打开 diff 并等待其关闭后重新询问，
+   *  避免 _closeOthers/_closeAll 中后续 tab 的确认框与 diff 叠加。 */
+  async _resolveUnsaved(path) {
+    const displayName = path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop();
+    while (true) {
+      const result = await showSaveConfirm(t('dialog.unsavedChangesFile', { name: displayName }));
+      if (result !== 'diff') return result;
+      // 先注册关闭监听再触发 diff：overlay 对 untitled 会同步关闭，提前注册避免丢事件
+      const closed = this._waitUnsavedDiffClosed();
+      eventBus.emit('show-unsaved-diff', path);
+      await closed;
+    }
+  }
+
+  /** 等待未保存对比 overlay 关闭（一次性，触发即解绑） */
+  _waitUnsavedDiffClosed() {
+    return new Promise((resolve) => {
+      const handler = () => {
+        eventBus.off('unsaved-diff-closed', handler);
+        resolve();
+      };
+      eventBus.on('unsaved-diff-closed', handler);
+    });
   }
 
   // 拖拽排序
@@ -181,11 +207,16 @@ class TabBar extends LitElement {
   _onContextMenu(e, path) {
     e.preventDefault();
     e.stopPropagation();
+    const file = editorState.getFile(path);
     const items = [
       { icon: '✕', label: t('tab.close'), action: () => this._closeTab(path, { stopPropagation: () => {} }) },
       // untitled 无磁盘实体，不提供重载
       ...(path.startsWith('__untitled_') ? [] : [
         { icon: '↻', label: t('tab.reloadFromDisk'), action: () => eventBus.emit('reload-from-disk', path) },
+        // 仅 dirty 文件提供未保存对比
+        ...(file?.isDirty ? [
+          { icon: '⚖', label: t('tab.compareUnsaved'), action: () => eventBus.emit('show-unsaved-diff', path) },
+        ] : []),
       ]),
       { icon: '—', label: t('tab.closeOthers'), action: () => this._closeOthers(path) },
       { icon: '◯', label: t('tab.closeAll'), action: () => this._closeAll() },

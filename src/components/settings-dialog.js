@@ -513,7 +513,7 @@ class SettingsDialog extends LitElement {
     this.endpoint = 'https://api.openai.com';
     this.apiKey = '';
     this.model = 'gpt-4o';
-    this.maxTokens = 8192;
+    this.maxTokens = 0;
     this.contextLimit = 100000;
     this.temperature = 0.7;
     this.testStatus = '';
@@ -1023,7 +1023,7 @@ class SettingsDialog extends LitElement {
         <div class="field">
           <label>${t('settings.ai.maxTokens')}</label>
           <input type="number" .value=${this.maxTokens} @input=${(e) => this.maxTokens = parseInt(e.target.value)} />
-          <div class="hint">单次最大输出 tokens；0 = 不限（适合长文，避免被截断）</div>
+          <div class="hint">单次最大输出 tokens；0 = 不限（默认，适合长文，避免被截断）</div>
           <label>上下文上限（tokens）</label>
           <input type="number" .value=${this.contextLimit} @input=${(e) => this.contextLimit = parseInt(e.target.value)} />
           <div class="hint">多轮对话自动压缩阈值。0 = 不压缩；默认 100000（大模型如 1M 上下文可调高）</div>

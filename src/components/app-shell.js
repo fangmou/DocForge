@@ -8,6 +8,7 @@ import { pluginLoader } from '../services/plugin-loader.js';
 import { shortcutRegistry } from '../services/shortcut-registry.js';
 import { loadEditorConfig, saveEditorConfig, getCurrentWorkspace, getRecentWorkspaces, loadWorkspaceState, saveWorkspaceState } from '../services/config-service.js';
 import { hashString } from '../services/hash.js';
+import './unsaved-diff-overlay.js';
 
 class AppShell extends LitElement {
   static properties = {
@@ -349,6 +350,9 @@ class AppShell extends LitElement {
     // 0. 快捷切换器（最高优先级）
     const qs = root.querySelector('quick-switcher');
     if (qs?.visible) { qs.hide(); return true; }
+    // 0b. 未保存修改对比 overlay
+    const unsavedDiff = root.querySelector('unsaved-diff-overlay');
+    if (unsavedDiff?.visible) { eventBus.emit('close-unsaved-diff'); return true; }
     // 1. 设置对话框
     const settings = root.querySelector('settings-dialog');
     if (settings?.visible) { settings.visible = false; settings.classList.remove('visible'); return true; }
@@ -631,6 +635,7 @@ class AppShell extends LitElement {
       <graph-view></graph-view>
       <plugin-manager-panel></plugin-manager-panel>
       <quick-switcher></quick-switcher>
+      <unsaved-diff-overlay></unsaved-diff-overlay>
     `;
   }
 }

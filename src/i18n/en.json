@@ -114,6 +114,7 @@
   "dialog.cancel": "Cancel",
   "dialog.save": "Save",
   "dialog.discard": "Don't Save",
+  "dialog.compareUnsaved": "Compare",
   "dialog.unsavedChanges": "File has unsaved changes. Save before closing?",
   "dialog.unsavedChangesFile": "\"{name}\" has unsaved changes. Save before closing?",
 
@@ -230,6 +231,7 @@
   "ai.action.improve": "Improve",
   "ai.errorPrefix": "Error: ",
   "ai.requestFailed": "Request failed: {error}",
+  "ai.truncated": "Output hit the Max Tokens limit and was cut off. Raise \"Max Tokens\" in settings, or set it to 0 (unlimited).",
   "ai.more": "More",
   "ai.manageScenes": "Manage scenes",
   "ai.scene.title": "Custom Scenes",
@@ -294,6 +296,10 @@
   "tab.copyPath": "Copy Path",
   "tab.revealInShell": "Reveal in File Manager",
   "tab.reloadFromDisk": "Reload from Disk",
+  "tab.compareUnsaved": "Compare Unsaved Changes",
+  "diff.unsaved.title": "Unsaved Changes",
+  "diff.unsaved.left": "Disk Version",
+  "diff.unsaved.right": "Editor Version",
   "tab.conflictTooltip": "Disk modified externally; saving overwrites it",
 
   "backlinks.title": "Backlinks",

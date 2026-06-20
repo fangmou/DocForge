@@ -1,0 +1,41 @@
+= CSS 默认值导致的"莫名大空行" — 踩坑记录
+
+== 背景
+
+在 Lit Web Components + CSS Grid 的对话/diff UI 调试中，反复遇到"明明没设 margin/padding，却出现大空行"的问题，且调间距无效。根因都是 **CSS 默认值在特定布局下露出马脚**。归档三个同 family 的坑，避免重蹈。
+
+== 坑 1：`white-space: pre-wrap` 吃 Lit 模板空白
+
+**现象**：对话气泡、对比块的上下出现大空行，调 margin/padding 完全无效。
+
+**原因**：Lit 的 `html\`...\`` 模板字面量里，标签之间的换行+缩进（`<div>你</div>\n    <div>润色</div>`）会作为文本节点保留。若容器设了 `white-space: pre-wrap`，这些空白被当成真实空白渲染出来——换行变成空行、缩进变成前导空白。
+
+**修复**：不要给容器整体设 `pre-wrap`；只给「确实需要保留换行的叶子文本元素」设。或把模板写紧凑（不留换行缩进）。
+
+**位置**：`src/components/ai-panel.js`（`.message` 去掉 pre-wrap，改在 `.msg-body` 局部保留 AI 多行输出）、`src/components/ai-diff-view.js`（`.cell` 去掉 pre-wrap，每行本就是独立 `<div>` 块级换行）。
+
+== 坑 2：grid `align-items: stretch`（默认）撑高短侧 cell
+
+**现象**：side-by-side diff 左右行数不同时，短的一侧 cell 被拉长，背景色（红/绿）填满空隙，看起来像"空块"。
+
+**原因**：grid item 默认 `align-self: stretch`，cell 拉伸到所在行的最高项高度。
+
+**修复**：cell 设 `align-self: start`，高度 = 自身内容行数，不拉伸。改动块的红/绿背景只包住实际内容行。
+
+**位置**：`src/components/ai-diff-view.js` `.cell`。
+
+== 坑 3：grid `align-content: stretch`（默认）拉伸行 track
+
+**现象**：diff 内容少、而 `.body`（`flex:1` 撑满窗口剩余）比内容高时，col-h 行和 chunk 行被拉伸填满容器，头部（磁盘版本/采用/编辑区版本）与块、块与块之间大空行。窗口越接近全屏、改动越少越明显。
+
+**原因**：grid 容器默认 `align-content: stretch`，行 track 拉伸填满容器高度。
+
+**修复**：grid 容器设 `align-content: start`，行按内容高度紧凑排列、顶对齐，不拉伸。
+
+**位置**：`src/components/ai-diff-view.js` `.body`。
+
+== 小结
+
+三者都是 CSS 默认值（`pre-wrap`、`align-items: stretch`、`align-content: stretch`）在 Lit 模板 / Grid 布局下的副作用。排查"莫名空行"时**先查这三项**，别先调 margin/padding——那是对症不治根。
+
+口诀：容器少用 `pre-wrap`（只在叶子用）、grid item 想紧凑就 `align-self: start`、grid 容器内容可能少于高度就 `align-content: start`。

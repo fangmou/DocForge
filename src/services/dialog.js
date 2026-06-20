@@ -109,12 +109,17 @@ export function showSaveConfirm(message) {
     }
     document.addEventListener('keydown', onKey);
 
+    const diffBtn = document.createElement('button');
+    diffBtn.style.cssText = _btnSecondary;
+    diffBtn.textContent = t('dialog.compareUnsaved');
+
     cancelBtn.onclick = () => close('cancel');
+    diffBtn.onclick = () => close('diff');
     discardBtn.onclick = () => close('discard');
     saveBtn.onclick = () => close('save');
     overlay.onclick = () => close('cancel');
 
-    actions.append(cancelBtn, discardBtn, saveBtn);
+    actions.append(cancelBtn, diffBtn, discardBtn, saveBtn);
     dialog.append(msg, actions);
     overlay.append(dialog);
     document.body.append(overlay);

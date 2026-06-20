@@ -23,7 +23,7 @@ impl Default for AiConfig {
             endpoint: "https://api.openai.com".into(),
             api_key: String::new(),
             model: "gpt-4o".into(),
-            max_tokens: 8192,
+            max_tokens: 0,
             temperature: 0.7,
             context_limit: 100000,
         }

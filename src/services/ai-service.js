@@ -41,6 +41,26 @@ export const AI_ACTIONS = {
   },
 };
 
+/**
+ * 剥掉「整体被单一代码围栏包裹」的外层 fence。
+ *
+ * 模型在被告知"输出 AsciiDoc/Markdown 格式"时，偶发地把整篇回复用
+ * ```adoc … ``` 围栏包起来。本函数在完整输出上做一次性兜底：仅当去首尾空白后
+ * 文本严格以 ```lang 开头、以 ``` 结尾时，剥掉这一对外层围栏；内层合法代码块保留。
+ * 判据严格（必须首尾成对），正常带代码块的文章首行是文字而非 fence，不会被误伤；
+ * 流式中途（末尾尚无 ```）也不匹配，故只应在完整内容上调用。
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripFenceWrapper(text) {
+  if (!text) return text;
+  const trimmed = text.replace(/^\n+|\n+$/g, '');
+  // 贪婪 [\s\S]* 让外层闭合取到最后一个 ```，内层 ``` 留在捕获组里不被吃掉
+  const m = trimmed.match(/^```[a-zA-Z0-9+#._-]*[ \t]*\n([\s\S]*)\n```[ \t]*$/);
+  return m ? m[1] : text;
+}
+
 export async function streamChatCompletion(messages, systemPrompt) {
   return invoke()('stream_chat_completion', { messages, systemPrompt });
 }
