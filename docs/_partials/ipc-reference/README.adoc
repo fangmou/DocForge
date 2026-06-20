@@ -17,6 +17,8 @@
 | `list_all_adoc_files` | 递归列出所有文档文件（含 Markdown） | link:file.adoc#list-all-adoc-files[查看]
 | `reveal_in_shell` | 在文件管理器中显示 | link:file.adoc#reveal-in-shell[查看]
 | `open_path` | 用系统默认程序打开文件 | link:file.adoc#open-path[查看]
+| `open_url` | 用系统默认程序打开 URL | link:app.adoc#open-url[查看]
+| `check_for_update` | 检查应用更新 | link:app.adoc#check-for-update[查看]
 | `stream_chat_completion` | AI流式对话 | link:ai.adoc#stream-chat-completion[查看]
 | `test_ai_connection` | 测试AI连接 | link:ai.adoc#test-ai-connection[查看]
 | `secrets_get_ai_key` | 从钥匙串读取AI密钥 | link:ai.adoc#secrets-get-ai-key[查看]
@@ -89,6 +91,8 @@
 |===
 
 include::file.adoc[]
+
+include::app.adoc[]
 
 include::ai.adoc[]
 

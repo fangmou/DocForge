@@ -51,7 +51,7 @@ impl Default for EditorConfig {
             font_size: 14,
             tab_size: 4,
             theme: "light".into(),
-            word_wrap: false,
+            word_wrap: true,
             auto_save_interval: 0,
             language: "zh".into(),
             sidebar_width: 240,

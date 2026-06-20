@@ -1,3 +1,4 @@
+pub mod app;
 pub mod file;
 pub mod ai;
 pub mod search;

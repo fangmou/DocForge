@@ -1,0 +1,45 @@
+//=== 应用级命令（元信息 / 系统交互）
+//=== 与 commands/app.rs 对应
+
+=== open_url
+
+*参数*: `url: String`
+*返回*: `Result<(), String>`
+
+用系统默认程序（浏览器）打开指定 URL。设置 → 关于页的「访问主页」「前往下载」按钮使用。平台特定实现：
+
+- Linux: `xdg-open <url>`
+- macOS: `open <url>`
+- Windows: `cmd /c start "" <url>`
+
+[NOTE]
+====
+与 `open_path` 同源（共享平台分支），但不做文件存在性校验——URL 非文件路径。
+====
+
+=== check_for_update
+
+*参数*: 无
+*返回*: `Result<UpdateCheckResult, String>`
+
+请求内置更新端点 `http://www.fangmou.com/release/docforge/version.json`，与本地版本（取自 `Cargo.toml`）比对，返回是否需要更新。
+
+返回结构 `UpdateCheckResult`（camelCase）：
+
+- `hasUpdate: boolean` — 是否有新版本
+- `currentVersion: string` — 当前版本号
+- `latestVersion: string` — 最新版本号
+- `downloadUrl: string` — 下载/详情页地址（端点未提供 `url` 时回退主页 `http://www.fangmou.com/docforge`）
+- `notes: string` — 更新说明（可空）
+
+更新端点需由发布者自行托管，约定 JSON 结构：
+
+[source,json]
+----
+{ "version": "0.2.0", "url": "http://www.fangmou.com/docforge", "notes": "可选更新说明" }
+----
+
+[NOTE]
+====
+走 Rust 端代理请求（而非前端 `fetch`），规避 CORS 与 CSP（`connect-src` 不含明文 http）。网络/解析失败时返回可读错误字符串，由前端友好提示。版本比较为按点分段的数值比较（非字典序），不依赖 `semver` crate。
+====

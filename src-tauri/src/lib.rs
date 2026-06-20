@@ -84,6 +84,8 @@ pub fn run() {
             commands::export::pick_docx_file,
             commands::export::import_docx,
             commands::export::resolve_includes,
+            commands::app::check_for_update,
+            commands::app::open_url,
             commands::config::save_editor_config,
             commands::config::load_editor_config,
             commands::config::save_export_config,

@@ -150,6 +150,15 @@ class TabBar extends LitElement {
    *  避免 _closeOthers/_closeAll 中后续 tab 的确认框与 diff 叠加。 */
   async _resolveUnsaved(path) {
     const displayName = path.startsWith('__untitled_') ? untitledName(path) : path.split('/').pop();
+    // 弹框前先切到目标 tab：让用户在编辑区看到正要决策的文件，且取消/保存/对比各分支
+    // 都在焦点已切到该 tab 的前提下执行（原先仅「对比」会切，行为不一致）
+    if (editorState.activeFilePath !== path) {
+      const file = editorState.getFile(path);
+      if (file) {
+        editorState.setActiveFile(path);
+        eventBus.emit('file-opened', { path, content: file.content });
+      }
+    }
     while (true) {
       const result = await showSaveConfirm(t('dialog.unsavedChangesFile', { name: displayName }));
       if (result !== 'diff') return result;

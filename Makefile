@@ -80,6 +80,11 @@ pkg-mac:
 	@uname -s | grep -q Darwin || { echo "需在 macOS 上运行"; exit 1; }
 	$(TAURI_CLI) build --target x86_64-apple-darwin
 
+# ========== 发版：统一版本号 + 生成 version.json ==========
+
+release:
+	@node scripts/release.mjs v="$(v)" m="$(m)"
+
 # ========== 内部：环境自动准备 ==========
 
 node-modules:
@@ -120,6 +125,8 @@ info:
 	@echo "  make pkg-linux    打 Linux 安装包 (.deb/.AppImage)"
 	@echo "  make pkg-windows  提示如何在 Windows 原生环境打安装包"
 	@echo "  make pkg-mac      打 macOS 安装包 (.dmg)"
+	@echo "  make release v=x.y.z [m=\"说明\"]"
+	@echo "                    统一版本号（Cargo.toml 为源）+ 同步 package.json + 生成 version.json"
 	@echo ""
 	@rustc --version 2>/dev/null || echo "Rust: 未安装"
 	@node --version 2>/dev/null | sed 's/^/Node.js: /' || echo "Node.js: 未安装"

@@ -384,6 +384,7 @@
   "markup.placeholder": "text",
 
   "settings.tab.markup": "Custom Markup",
+  "settings.tab.about": "About",
   "settings.markup.title": "Custom Markup Snippets",
   "settings.markup.hint": "Use {selected} placeholder for selected text position. Leave empty to insert at cursor.",
   "settings.markup.addSnippet": "Add Snippet",
@@ -397,6 +398,14 @@
   "settings.markup.shortcut": "Shortcut",
   "settings.markup.delete": "Delete",
   "settings.markup.empty": "Click 'Add Snippet' to create a custom markup",
+
+  "settings.about.checkUpdate": "Check for Updates",
+  "settings.about.checking": "Checking…",
+  "settings.about.upToDate": "You're up to date",
+  "settings.about.newVersionAvailable": "New version available",
+  "settings.about.download": "Download",
+  "settings.about.checkFailed": "Update check failed",
+  "settings.about.homepage": "Homepage",
 
   "shortcuts.toggleLineComment": "Toggle Line Comment",
   "shortcuts.toggleBlockComment": "Toggle Block Comment",

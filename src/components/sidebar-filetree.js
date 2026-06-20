@@ -559,9 +559,12 @@ class SidebarFiletree extends LitElement {
       const defaultName = await this._suggestNewFileName(path);
       const fileName = await this._showInputDialog('new-file', defaultName);
       if (!fileName) return;
+      const newPath = `${path}/${fileName}`;
       try {
-        await createFile(`${path}/${fileName}`);
+        await createFile(newPath);
         await this._refresh();
+        // 创建成功后立即在编辑器中打开新文件
+        await this._openFile(newPath);
       } catch (e) { console.error('创建文件失败:', e); }
     } else if (type === 'new-dir') {
       const dirName = await this._showInputDialog('new-dir', '');

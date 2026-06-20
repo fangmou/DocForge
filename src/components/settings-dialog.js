@@ -14,6 +14,8 @@ import { activateOnKey } from '../services/a11y.js';
 import { shortcutRegistry, keyFromEvent } from '../services/shortcut-registry.js';
 import { detectPdfCommand, detectPandocCommand, resolveExportPath } from '../services/export-service.js';
 import { showConfirm } from '../services/dialog.js';
+import { getAppVersion, checkForUpdate, openUrl, HOMEPAGE_URL } from '../services/app-service.js';
+import logoUrl from '../assets/logo.svg';
 
 class SettingsDialog extends LitElement {
   static properties = {
@@ -73,6 +75,11 @@ class SettingsDialog extends LitElement {
     customSnippets: { type: Array },
     // 树状导航展开状态
     _exportExpanded: { state: true },
+    // 关于
+    appVersion: { type: String },
+    updateChecking: { type: Boolean },
+    updateResult: { type: Object },
+    updateError: { type: String },
   };
 
   static styles = css`
@@ -313,6 +320,66 @@ class SettingsDialog extends LitElement {
     }
     .test-status.ok { color: var(--color-success); }
     .test-status.fail { color: var(--color-error); }
+    /* 关于页 */
+    .about {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 32px 20px 12px;
+      gap: 10px;
+    }
+    .about-logo {
+      width: 72px;
+      height: 72px;
+      border-radius: 16px;
+      object-fit: contain;
+    }
+    .about-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-1);
+      font-family: var(--font-display);
+    }
+    .about-name-en {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-3);
+      margin-left: 6px;
+    }
+    .about-version {
+      font-size: 13px;
+      color: var(--text-2);
+    }
+    .about-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .about-result {
+      margin-top: 4px;
+      font-size: 12px;
+      min-height: 16px;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .about-notes {
+      font-size: 12px;
+      color: var(--text-2);
+      background: var(--bg-3);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 8px 10px;
+      text-align: left;
+      white-space: pre-wrap;
+      max-height: 160px;
+      overflow-y: auto;
+      width: 100%;
+      box-sizing: border-box;
+    }
     /* 快捷键列表 */
     .shortcut-list {
       display: flex;
@@ -582,6 +649,8 @@ class SettingsDialog extends LitElement {
     this.classList.add('visible');
     this.activeTab = 'editor';
     this._loadAll();
+    // 版本号取自 tauri.conf.json（运行期唯一来源）
+    getAppVersion().then((v) => { this.appVersion = v; }).catch(() => {});
   }
 
   async _loadAll() {
@@ -984,6 +1053,9 @@ class SettingsDialog extends LitElement {
             <button class="nav-item ${this.activeTab === 'markup' ? 'active' : ''}" @click=${() => this._switchTab('markup')}>
               <span class="nav-icon">✥</span> ${t('settings.tab.markup')}
             </button>
+            <button class="nav-item ${this.activeTab === 'about' ? 'active' : ''}" @click=${() => this._switchTab('about')}>
+              <span class="nav-icon">ⓘ</span> ${t('settings.tab.about')}
+            </button>
           </div>
           <div class="content">
             ${this.activeTab === 'editor' ? this._renderEditorTab() : ''}
@@ -994,6 +1066,7 @@ class SettingsDialog extends LitElement {
             ${this.activeTab === 'asciidocDocx' ? this._renderDocxTab() : ''}
             ${this.activeTab === 'shortcuts' ? this._renderShortcutsTab() : ''}
             ${this.activeTab === 'markup' ? this._renderMarkupTab() : ''}
+            ${this.activeTab === 'about' ? this._renderAboutTab() : ''}
           </div>
         </div>
         <div class="footer">
@@ -1409,6 +1482,62 @@ class SettingsDialog extends LitElement {
     const idx = parseInt(e.target.dataset.scIdx);
     this._updateSnippet(idx, { ...this.customSnippets[idx], shortcut: combo });
     e.target.value = combo;
+  }
+
+  _renderAboutTab() {
+    return html`
+      <div class="about">
+        <img class="about-logo" src=${logoUrl} alt="DocForge" />
+        <div class="about-name">方谋文构<span class="about-name-en">DocForge</span></div>
+        <div class="about-version">v${this.appVersion || '—'}</div>
+        <div class="about-actions">
+          <button class="primary" ?disabled=${this.updateChecking} @click=${this._checkUpdate}>
+            ${this.updateChecking ? t('settings.about.checking') : t('settings.about.checkUpdate')}
+          </button>
+          <button class="test-btn" @click=${() => this._openUrl(HOMEPAGE_URL)}>${t('settings.about.homepage')}</button>
+        </div>
+        <div class="about-result">
+          ${this._renderUpdateStatus()}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderUpdateStatus() {
+    if (this.updateError) {
+      return html`<div class="test-status fail">${t('settings.about.checkFailed')}：${this.updateError}</div>`;
+    }
+    const r = this.updateResult;
+    if (!r) return '';
+    if (r.hasUpdate) {
+      return html`
+        <div class="test-status ok">${t('settings.about.newVersionAvailable')}：v${r.latestVersion}</div>
+        ${r.notes ? html`<div class="about-notes">${r.notes}</div>` : ''}
+        <button class="test-btn" @click=${() => this._openUrl(r.downloadUrl)}>${t('settings.about.download')}</button>
+      `;
+    }
+    return html`<div class="test-status ok">${t('settings.about.upToDate')}</div>`;
+  }
+
+  async _checkUpdate() {
+    this.updateChecking = true;
+    this.updateResult = null;
+    this.updateError = null;
+    try {
+      this.updateResult = await checkForUpdate();
+    } catch (e) {
+      this.updateError = String((e && e.message) || e || '');
+    } finally {
+      this.updateChecking = false;
+    }
+  }
+
+  async _openUrl(url) {
+    try {
+      await openUrl(url);
+    } catch (_) {
+      // 打开失败静默处理（系统无默认浏览器等极端情况）
+    }
   }
 }
 
