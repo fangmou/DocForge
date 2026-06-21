@@ -1,0 +1,46 @@
+= 关于页与检查更新 — 决策与踩坑记录
+
+== 背景
+
+新增「设置 → 关于文构」页（应用版本/主页入口/检查更新）与发版流程（`make release` 统一版本号 + 生成 `version.json`）。实现中有三处非显然的决策与一个安全踩坑，归档如下，避免后续维护时反复重新推导。
+
+== 决策 1：版本号 SSOT 收敛到 Cargo.toml
+
+**问题**：版本号原本散落在 `package.json` / `Cargo.toml` / `tauri.conf.json` 三处，手动维护易漂移。
+
+**方案**：以 `src-tauri/Cargo.toml` 的 `version` 为唯一来源：
+
+- `tauri.conf.json` **删除** `version` 字段——Tauri v2 在该字段缺失时自动回退读 `Cargo.toml`（已溯源到 `tauri-codegen` 的 `env!("CARGO_PKG_VERSION")` 注入，编译期烘焙，非运行期脆弱假设）。
+- `package.json` 的 version 由发版脚本 `scripts/release.mjs` 同步。
+- 后端 `HOMEPAGE_URL` 取自 `Cargo.toml` 的 `homepage`（`env!("CARGO_PKG_HOMEPAGE")`），避免主页地址三处硬编码。
+
+**验证**：删除 `tauri.conf.json` version 后 `make linux` 编译，日志显示 `Compiling docforge v0.1.0`，确认回退生效；运行期 `app.getVersion()` 返回 Cargo.toml 版本。
+
+**位置**：`src-tauri/tauri.conf.json`（删 version）、`src-tauri/src/commands/app.rs`（`env!` 常量）、`scripts/release.mjs`（同步 version + 读 homepage）。
+
+== 决策 2：检查更新走 Rust 端代理
+
+**问题**：检查更新需请求 `http://www.fangmou.com/release/docforge/version.json` 比对版本。前端直接 `fetch` 会撞两堵墙：
+
+- **CSP**：`tauri.conf.json` 的 `connect-src` 是 `'self' ipc: http://ipc.localhost https:`——只放行 https，**不含明文 http**。而更新端点是 http。
+- **CORS**：自托管端点若不返回 `Access-Control-Allow-Origin`，WebKit 拦截。
+
+**方案**：新增 `check_for_update` 命令，在 Rust 端用 `reqwest` 请求端点、解析 JSON、与本地版本比对，返回结构化结果。绕过前端的 CSP/CORS 限制（后端请求不受 WebKit CSP 约束）。
+
+**权衡**：端点是明文 http，存在中间人篡改风险（属已知权衡，保持 http 以适应当前服务器）。Rust 代理的额外价值：统一 10s 超时、错误信息本地化、未来可加签名校验。
+
+**位置**：`src-tauri/src/commands/app.rs::check_for_update`。
+
+== 决策 3 / 踩坑：open_url 用 explorer.exe 规避 Windows cmd 注入
+
+**现象**：`open_url` 初版照搬 `open_path` 的 Windows 分支 `cmd /c start "" <url>`。代码评审发现：URL 中的 `&`（合法查询参数，如 `?a=1&b=2`）会被 `cmd.exe` 当作**命令分隔符**——实测 `url` 内嵌 `&echo=HACKED` 会真的执行 `HACKED`。`downloadUrl` 来自外部 `version.json` 的 `url` 字段（不可控），构成参数/命令注入。
+
+**原因**：Rust `Command::arg` 的转义基于 `CommandLineToArgvW` 规则（处理空格/tab/引号），**不对 `&` 加引号**；而 `cmd /c` 把整条命令行重新分词，`&` 在双引号外是分隔符。`open_path` 因输入是受控本地路径（不含 `&`）天然规避，`open_url` 把输入域放开到外部 URL 后该面暴露。
+
+**修复**：Windows 改用 `explorer.exe <url>`——它以标准 argv 接收 URL，不经过 cmd shell 解析，`&` 不被当分隔符。同时入口加 `is_http_url` 白名单（仅 http/https），拒绝 `file:`/`data:`/`javascript:` 等可被系统路由到危险处理器的 scheme。
+
+**位置**：`src-tauri/src/commands/app.rs::open_url` + `is_http_url`。
+
+== 小结
+
+三者的共同线索是「单一来源」与「输入域收窄」：版本号收敛到 Cargo.toml 一处定义、检查更新端点与主页 URL 收敛到源文件读取（不硬编码）、open_url 的输入域收窄到 http/https 白名单 + 不经 shell 解析的打开方式。后续若新增「从外部取值再交给系统执行」的功能（如打开远端返回的路径/URL），务必先做 scheme 白名单 + 避免 `cmd /c` 这类 shell 分词。

@@ -42,6 +42,18 @@ make pkg-mac        # macOS .dmg（需 macOS 主机）
 
 产物在 `src-tauri/target/<平台>/release/bundle/` 下。
 
+==== 发版：版本号统一与 version.json
+
+发布前用 `make release` 统一版本号并生成 `version.json`（供应用内「检查更新」拉取）：
+
+[source,bash]
+----
+make release v=0.2.0 m="更新说明"   # 统一版本号 + 生成 version.json（不触碰 git）
+make pkg-linux                      # 而后再打包
+----
+
+版本号唯一来源是 `src-tauri/Cargo.toml`（`tauri.conf.json` 已删除 version 字段，Tauri v2 自动回退读 Cargo.toml），`package.json` 由脚本同步。生成的 `version.json`（含 `version`/`url`/`notes`）需上传到检查更新端点。
+
 ==== Windows 安装包（Windows 原生）
 
 Tauri 在 WSL/Linux 宿主上交叉编译 Windows NSIS 包时会调用 `makensis.exe`，因路径与
