@@ -64,10 +64,12 @@ export function showConfirm(message) {
 }
 
 /**
- * 未保存文件关闭确认框，返回 'save' | 'discard' | 'cancel'
+ * 未保存文件关闭确认框，返回 'save' | 'discard' | 'cancel' | 'diff'
  * @param {string} message 提示消息
+ * @param {Object} [opts]
+ * @param {boolean} [opts.canCompare=true] 是否显示「对比修改」按钮；新建未存盘文件无磁盘版本可对比应传 false
  */
-export function showSaveConfirm(message) {
+export function showSaveConfirm(message, { canCompare = true } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = _overlayStyle;
@@ -109,17 +111,23 @@ export function showSaveConfirm(message) {
     }
     document.addEventListener('keydown', onKey);
 
-    const diffBtn = document.createElement('button');
-    diffBtn.style.cssText = _btnSecondary;
-    diffBtn.textContent = t('dialog.compareUnsaved');
-
     cancelBtn.onclick = () => close('cancel');
-    diffBtn.onclick = () => close('diff');
     discardBtn.onclick = () => close('discard');
     saveBtn.onclick = () => close('save');
     overlay.onclick = () => close('cancel');
 
-    actions.append(cancelBtn, diffBtn, discardBtn, saveBtn);
+    // 「对比修改」仅在有磁盘版本可对比时显示；新建未存盘文件（untitled）由调用方传 canCompare=false 隐藏，
+    // 与 tab 右键菜单对 untitled 隐藏「未保存对比」的处理一致，避免点了无反应。
+    const buttons = [cancelBtn];
+    if (canCompare) {
+      const diffBtn = document.createElement('button');
+      diffBtn.style.cssText = _btnSecondary;
+      diffBtn.textContent = t('dialog.compareUnsaved');
+      diffBtn.onclick = () => close('diff');
+      buttons.push(diffBtn);
+    }
+    buttons.push(discardBtn, saveBtn);
+    actions.append(...buttons);
     dialog.append(msg, actions);
     overlay.append(dialog);
     document.body.append(overlay);

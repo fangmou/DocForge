@@ -12,12 +12,16 @@ export async function writeFile(path, content) {
   return invoke()('write_file', { path, content });
 }
 
-export async function listDirectory(path) {
-  return invoke()('list_directory', { path });
+export async function listDirectory(path, showHidden) {
+  const payload = { path };
+  if (showHidden) payload.showHidden = true;
+  return invoke()('list_directory', payload);
 }
 
-export async function listSubDirectory(path) {
-  return invoke()('list_sub_directory', { path });
+export async function listSubDirectory(path, showHidden) {
+  const payload = { path };
+  if (showHidden) payload.showHidden = true;
+  return invoke()('list_sub_directory', payload);
 }
 
 export async function pickDirectory() {

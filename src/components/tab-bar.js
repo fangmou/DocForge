@@ -160,7 +160,12 @@ class TabBar extends LitElement {
       }
     }
     while (true) {
-      const result = await showSaveConfirm(t('dialog.unsavedChangesFile', { name: displayName }));
+      // 新建未存盘文件（untitled）无磁盘版本可对比：不显示「对比修改」（与右键菜单一致）
+      const canCompare = !path.startsWith('__untitled_');
+      const result = await showSaveConfirm(
+        t('dialog.unsavedChangesFile', { name: displayName }),
+        { canCompare }
+      );
       if (result !== 'diff') return result;
       // 先注册关闭监听再触发 diff：overlay 对 untitled 会同步关闭，提前注册避免丢事件
       const closed = this._waitUnsavedDiffClosed();

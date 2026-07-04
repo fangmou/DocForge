@@ -349,14 +349,16 @@ class StatusBar extends LitElement {
   render() {
     const isPreview = this.viewMode === 'preview';
     const showVim = !isPreview && this._vimEnabled;
+    // untitled 无磁盘版本可对比：● 不挂对比动作（与右键菜单一致），dirty 视觉提示保留
+    const canCompareUnsaved = this.isDirty && !editorState.activeFilePath?.startsWith('__untitled_');
     return html`
       <div class="left">
         ${this.filePath ? html`
           <span class="indicator ${this.isDirty ? 'dirty' : ''} ${this.hasConflict ? 'conflict' : ''}"
-                title="${this.hasConflict ? t('statusBar.externalConflict') : (this.isDirty ? t('tab.compareUnsaved') : '')}"
+                title="${this.hasConflict ? t('statusBar.externalConflict') : (canCompareUnsaved ? t('tab.compareUnsaved') : '')}"
                 @click=${this.hasConflict
                   ? () => eventBus.emit('reload-from-disk', editorState.activeFilePath)
-                  : this.isDirty
+                  : canCompareUnsaved
                     ? () => eventBus.emit('show-unsaved-diff', editorState.activeFilePath)
                     : null}></span>
         ` : ''}

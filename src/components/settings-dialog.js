@@ -41,6 +41,7 @@ class SettingsDialog extends LitElement {
     vimMode: { type: Boolean },
     vimEscapeSeq: { type: String },
     defaultViewMode: { type: String },
+    showHiddenFiles: { type: Boolean },
     // 导出通用
     outputDir: { type: String },
     outputNaming: { type: String },
@@ -596,6 +597,7 @@ class SettingsDialog extends LitElement {
     this.vimMode = false;
     this.vimEscapeSeq = 'jk';
     this.defaultViewMode = 'split';
+    this.showHiddenFiles = false;
     // 导出通用
     this.outputDir = '';
     this.outputNaming = 'title';
@@ -691,6 +693,7 @@ class SettingsDialog extends LitElement {
       this.vimMode = ed.vim_mode || false;
       this.vimEscapeSeq = ed.vim_escape_seq || 'jk';
       this.defaultViewMode = ed.default_view_mode || 'split';
+      this.showHiddenFiles = ed.show_hidden_files || false;
     }
 
     // 导出通用配置 + pandoc
@@ -803,11 +806,13 @@ class SettingsDialog extends LitElement {
         vim_mode: this.vimMode,
         vim_escape_seq: this.vimEscapeSeq,
         default_view_mode: this.defaultViewMode,
+        show_hidden_files: this.showHiddenFiles,
       });
       eventBus.emit('set-auto-save', this.autoSaveInterval);
       eventBus.emit('font-size-set', this.fontSize);
       eventBus.emit('set-word-wrap', this.wordWrap);
       eventBus.emit('set-vim-mode', { enabled: this.vimMode, escapeSeq: this.vimEscapeSeq });
+      eventBus.emit('show-hidden-changed', this.showHiddenFiles);
       if (this.language !== getLanguage()) {
         await setLanguage(this.language);
         eventBus.emit('language-changed', this.language);
@@ -1156,6 +1161,13 @@ class SettingsDialog extends LitElement {
           <input type="checkbox" .checked=${this.wordWrap} @change=${(e) => this.wordWrap = e.target.checked} />
           ${t('settings.editor.wordWrap')}
         </label>
+      </div>
+      <div class="field">
+        <label class="checkbox-label">
+          <input type="checkbox" .checked=${this.showHiddenFiles} @change=${(e) => this.showHiddenFiles = e.target.checked} />
+          ${t('settings.editor.showHiddenFiles')}
+        </label>
+        <div class="hint">${t('settings.editor.showHiddenFilesHint')}</div>
       </div>
       <div class="field">
         <label class="checkbox-label">

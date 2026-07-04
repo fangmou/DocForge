@@ -57,6 +57,7 @@
   "sidebar.fileDeleted": "File not found or has been moved. Removed from recent list.",
   "sidebar.files": "Files",
   "sidebar.refresh": "Refresh",
+  "sidebar.showHidden": "Show hidden files",
   "sidebar.removeWorkspace": "Remove this workspace",
 
   "editor.placeholder": "// Welcome to Fangmou DocForge!\n// Writing, Engineered.\n// Click 📂 to open a workspace and start building knowledge\n",
@@ -133,6 +134,8 @@
   "settings.editor.tabSize": "Tab Size",
   "settings.editor.autoSave": "Auto-save interval (seconds, 0 to disable)",
   "settings.editor.wordWrap": "Word Wrap",
+  "settings.editor.showHiddenFiles": "Show hidden files and directories",
+  "settings.editor.showHiddenFilesHint": "Show files and directories starting with . in the file tree",
   "settings.editor.vimMode": "Vim Mode",
   "settings.editor.vimModeHint": "Enable Vim keybindings. ESC or escape sequence to return to normal mode",
   "settings.editor.vimEscapeSeq": "Insert mode escape sequence",

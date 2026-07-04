@@ -4,7 +4,7 @@ import { editorState } from '../services/editor-state.js';
 import { eventBus } from '../services/event-bus.js';
 import { showConfirm } from '../services/dialog.js';
 import { isBinaryFile } from '../services/format-commands.js';
-import { getRecentFiles, getRecentWorkspaces, setCurrentWorkspace, removeRecentWorkspace, addRecentFile, removeRecentFile } from '../services/config-service.js';
+import { getRecentFiles, getRecentWorkspaces, setCurrentWorkspace, removeRecentWorkspace, addRecentFile, removeRecentFile, loadEditorConfig, saveEditorConfig } from '../services/config-service.js';
 import { t } from '../services/i18n.js';
 
 class SidebarFiletree extends LitElement {
@@ -18,6 +18,7 @@ class SidebarFiletree extends LitElement {
     _treeCollapsed: { state: true },
     _recentCollapsed: { state: true },
     _inputDialog: { state: true },
+    showHidden: { state: true },
   };
 
   static styles = css`
@@ -58,12 +59,18 @@ class SidebarFiletree extends LitElement {
       padding: 2px 4px;
       border-radius: 3px;
       opacity: 0.4;
-      margin-left: auto;
       color: var(--text-2);
+    }
+    .ws-header .show-hidden-btn {
+      margin-left: auto;
     }
     .ws-header .refresh-btn:hover {
       opacity: 0.8;
       background: var(--bg-3);
+    }
+    .ws-header .refresh-btn.is-active {
+      opacity: 0.9;
+      color: var(--accent);
     }
     .ws-menu {
       position: absolute;
@@ -291,10 +298,17 @@ class SidebarFiletree extends LitElement {
     this._recentCollapsed = false;
     this._inputDialog = null;
     this._inputResolve = null;
+    this.showHidden = false;
+    // 占位：connectedCallback 中替换为真正的配置读取 promise，避免 constructor 过早触发 IPC
+    this._configReady = Promise.resolve();
   }
 
   connectedCallback() {
     super.connectedCallback();
+    // 配置守卫：在注册 workspace-opened 之前启动，确保首次 _loadDir 在读取 showHidden 偏好之后执行
+    this._configReady = loadEditorConfig()
+      .then(c => { this.showHidden = !!c.show_hidden_files; })
+      .catch(() => {});
     this._wsHandler = (path) => this._loadDir(path);
     eventBus.on('workspace-opened', this._wsHandler);
     eventBus.on('file-saved', () => this.requestUpdate());
@@ -304,6 +318,8 @@ class SidebarFiletree extends LitElement {
     this._loadRecentWorkspaces();
     this._langHandler = () => this.requestUpdate();
     eventBus.on('language-changed', this._langHandler);
+    this._showHiddenHandler = (v) => { this.showHidden = v; this._refresh(); };
+    eventBus.on('show-hidden-changed', this._showHiddenHandler);
     // 点击外部关闭工作区菜单
     this._closeMenuHandler = (e) => {
       if (this.showWsMenu && !e.composedPath().includes(this)) {
@@ -318,6 +334,7 @@ class SidebarFiletree extends LitElement {
     if (this._wsHandler) eventBus.off('workspace-opened', this._wsHandler);
     if (this._ctxHandler) eventBus.off('context-menu-action', this._ctxHandler);
     if (this._langHandler) eventBus.off('language-changed', this._langHandler);
+    if (this._showHiddenHandler) eventBus.off('show-hidden-changed', this._showHiddenHandler);
     if (this._closeMenuHandler) document.removeEventListener('click', this._closeMenuHandler);
   }
 
@@ -335,8 +352,9 @@ class SidebarFiletree extends LitElement {
 
   async _loadDir(path) {
     try {
+      await this._configReady;
       this.rootPath = path;
-      this.entries = await listDirectory(path);
+      this.entries = await listDirectory(path, this.showHidden);
       editorState.workspaceRoot = path;
       // 持久化当前工作区
       setCurrentWorkspace(path).catch(() => {});
@@ -414,7 +432,7 @@ class SidebarFiletree extends LitElement {
       const entry = this._findEntry(this.entries, path);
       if (entry && !entry.children) {
         try {
-          const children = await listSubDirectory(path);
+          const children = await listSubDirectory(path, this.showHidden);
           entry.children = children;
         } catch (e) {
           console.error('加载子目录失败:', e);
@@ -468,7 +486,7 @@ class SidebarFiletree extends LitElement {
     const entry = this._findEntry(this.entries, parentPath);
     if (!entry) return 'untitled.adoc';
     if (!entry.children) {
-      try { entry.children = await listSubDirectory(parentPath); }
+      try { entry.children = await listSubDirectory(parentPath, this.showHidden); }
       catch (_) { return 'untitled.adoc'; }
     }
     const existing = new Set(entry.children.map(e => e.name.toLowerCase()));
@@ -580,7 +598,7 @@ class SidebarFiletree extends LitElement {
     if (!this.rootPath) return;
     const expandedPaths = [...this.expanded];
     try {
-      this.entries = await listDirectory(this.rootPath);
+      this.entries = await listDirectory(this.rootPath, this.showHidden);
     } catch (e) {
       console.error('刷新目录失败:', e);
       return;
@@ -588,12 +606,24 @@ class SidebarFiletree extends LitElement {
     for (const dirPath of expandedPaths) {
       const entry = this._findEntry(this.entries, dirPath);
       if (entry) {
-        try { entry.children = await listSubDirectory(dirPath); }
+        try { entry.children = await listSubDirectory(dirPath, this.showHidden); }
         catch (_) { /* 目录可能已被删除/重命名 */ }
       }
     }
     this.expanded = new Set(expandedPaths);
     this.requestUpdate();
+  }
+
+  async _toggleShowHidden() {
+    try {
+      const cfg = await loadEditorConfig();
+      cfg.show_hidden_files = !this.showHidden;
+      await saveEditorConfig(cfg);
+      this.showHidden = cfg.show_hidden_files;
+      this._refresh();
+    } catch (e) {
+      console.error('切换显示隐藏文件失败:', e);
+    }
   }
 
   _renderEntries(entries, depth = 0) {
@@ -638,6 +668,7 @@ class SidebarFiletree extends LitElement {
         <div class="ws-header" @click=${this._toggleWsMenu}>
           📂 ${wsName}
           <span class="arrow">${this.recentWorkspaces.length > 1 ? '▾' : ''}</span>
+          <button class="refresh-btn show-hidden-btn ${this.showHidden ? 'is-active' : ''}" @click=${(e) => { e.stopPropagation(); this._toggleShowHidden(); }} title="${t('sidebar.showHidden')}">👁</button>
           <button class="refresh-btn" @click=${(e) => { e.stopPropagation(); this._refresh(); }} title="${t('sidebar.refresh')}">↻</button>
           ${this.showWsMenu && this.recentWorkspaces.length > 1 ? html`
             <div class="ws-menu">

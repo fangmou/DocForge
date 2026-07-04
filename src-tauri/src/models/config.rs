@@ -43,6 +43,7 @@ pub struct EditorConfig {
     pub vim_mode: bool,
     pub vim_escape_seq: String,
     pub default_view_mode: String,
+    pub show_hidden_files: bool,
 }
 
 impl Default for EditorConfig {
@@ -58,6 +59,7 @@ impl Default for EditorConfig {
             vim_mode: false,
             vim_escape_seq: "jk".into(),
             default_view_mode: "split".into(),
+            show_hidden_files: false,
         }
     }
 }

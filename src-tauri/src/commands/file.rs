@@ -80,19 +80,21 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    list_dir_recursive(path, 1).await
+pub async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
+    list_dir_recursive(path, 1, show_hidden.unwrap_or(false)).await
 }
 
 /// 按需加载单个目录的子项（用于文件树懒加载）
 #[tauri::command]
-pub async fn list_sub_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    list_dir_recursive(path, 1).await
+pub async fn list_sub_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
+    // 与 list_directory 行为一致：均按 max_depth=1 展开，更深层级由前端按需调用本命令懒加载
+    list_directory(path, show_hidden).await
 }
 
 fn list_dir_recursive(
     path: String,
     max_depth: usize,
+    show_hidden: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<FileEntry>, String>> + Send>> {
     Box::pin(async move {
         let mut entries = Vec::new();
@@ -106,7 +108,7 @@ fn list_dir_recursive(
             .map_err(|e| format!("遍历目录失败: {}", e))?
         {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
+            if !show_hidden && name.starts_with('.') {
                 continue;
             }
 
@@ -118,7 +120,7 @@ fn list_dir_recursive(
                 .unwrap_or(false);
 
             let children = if is_dir && max_depth > 0 {
-                Some(list_dir_recursive(path_str.clone(), max_depth - 1).await?)
+                Some(list_dir_recursive(path_str.clone(), max_depth - 1, show_hidden).await?)
             } else {
                 None
             };
@@ -331,4 +333,56 @@ pub async fn reveal_in_shell(path: String) -> Result<(), String> {
             .map_err(|e| format!("打开失败: {}", e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn list_dir_recursive_hides_dotfiles_by_default() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("visible.adoc"), "").unwrap();
+        fs::write(root.join(".hidden"), "").unwrap();
+        fs::create_dir(root.join(".gitdir")).unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+
+        let entries = list_dir_recursive(root.to_string_lossy().to_string(), 1, false)
+            .await
+            .unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"visible.adoc"));
+        assert!(names.contains(&"sub"));
+        assert!(!names.contains(&".hidden"));
+        assert!(!names.contains(&".gitdir"));
+    }
+
+    #[tokio::test]
+    async fn list_dir_recursive_shows_dotfiles_when_enabled() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("visible.adoc"), "").unwrap();
+        fs::write(root.join(".hidden"), "").unwrap();
+        fs::create_dir(root.join(".gitdir")).unwrap();
+        fs::write(root.join(".gitdir").join(".innerhidden"), "").unwrap();
+        fs::write(root.join(".gitdir").join("inner"), "").unwrap();
+
+        let entries = list_dir_recursive(root.to_string_lossy().to_string(), 1, true)
+            .await
+            .unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"visible.adoc"));
+        assert!(names.contains(&".hidden"));
+        assert!(names.contains(&".gitdir"));
+
+        // 递归传播：隐藏目录内部的隐藏文件也应列出（验证 show_hidden 传给了深层递归）
+        let gitdir = entries.iter().find(|e| e.name == ".gitdir").unwrap();
+        let children = gitdir.children.as_ref().unwrap();
+        let child_names: Vec<&str> = children.iter().map(|e| e.name.as_str()).collect();
+        assert!(child_names.contains(&"inner"));
+        assert!(child_names.contains(&".innerhidden"));
+    }
 }
