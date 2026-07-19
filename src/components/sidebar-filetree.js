@@ -82,7 +82,7 @@ class SidebarFiletree extends LitElement {
       border-radius: 6px;
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
       z-index: 50;
-      max-height: 50vh;
+      max-height: 70vh;
       overflow-y: auto;
       padding: 4px 0;
     }

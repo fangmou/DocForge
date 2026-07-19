@@ -400,7 +400,6 @@ pub async fn set_current_workspace(
         .unwrap_or_default()
         .as_secs();
     config.recent_workspaces.insert(0, RecentFile { path, opened_at: now });
-    config.recent_workspaces.truncate(10);
     let snapshot = config.clone();
     drop(config);
     persist_to_disk(&app, &snapshot);
