@@ -304,6 +304,8 @@
   "diff.unsaved.left": "Disk Version",
   "diff.unsaved.right": "Editor Version",
   "tab.conflictTooltip": "Disk modified externally; saving overwrites it",
+  "tab.moreLeft": "{n} more tabs on the left",
+  "tab.moreRight": "{n} more tabs on the right",
 
   "backlinks.title": "Backlinks",
   "backlinks.empty": "No backlinks",

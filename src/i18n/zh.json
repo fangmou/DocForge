@@ -304,6 +304,8 @@
   "diff.unsaved.left": "磁盘版本",
   "diff.unsaved.right": "编辑区版本",
   "tab.conflictTooltip": "磁盘已被外部修改，保存将覆盖外部改动",
+  "tab.moreLeft": "左侧还有 {n} 个标签页",
+  "tab.moreRight": "右侧还有 {n} 个标签页",
 
   "backlinks.title": "反向链接",
   "backlinks.empty": "无反向链接",
