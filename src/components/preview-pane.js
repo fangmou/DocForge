@@ -3,14 +3,15 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { eventBus } from '../services/event-bus.js';
 import { setPreviewSync, syncEditor } from '../services/scroll-sync.js';
 import { editorState } from '../services/editor-state.js';
+import { parseOutline } from '../services/outline-parser.js';
 import { t } from '../services/i18n.js';
 import { buildAttributes } from '../services/asciidoc-attrs.js';
 import { getFileCategory, getFormat } from '../services/format-commands.js';
 import { readBinaryFile } from '../services/file-service.js';
-import { resolveIncludes } from '../services/export-service.js';
+import { resolveIncludesIfAny } from '../services/export-service.js';
+import { getAsciidoctor } from '../services/asciidoctor-instance.js';
 import { getRendered, setRendered } from '../services/preview-cache.js';
 
-let asciidoctor = null;
 let markedInstance = null;
 
 async function getMarked() {
@@ -240,10 +241,7 @@ class PreviewPane extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
-    if (!asciidoctor) {
-      const module = await import('@asciidoctor/core');
-      asciidoctor = module.default();
-    }
+    this._asciidoctor = await getAsciidoctor();
     this._contentHandler = (content) => this._render(content);
     eventBus.on('content-changed', this._contentHandler);
     this._lastContent = '';
@@ -266,6 +264,12 @@ class PreviewPane extends LitElement {
       if (mode !== 'edit' && this._lastContent) this._render(this._lastContent);
     };
     eventBus.on('view-mode-changed', this._viewModeHandler);
+    // 大纲/反链点击定位：仅 preview 模式（编辑器隐藏）由预览接管，edit/split 仍交给编辑器
+    this._jumpHandler = (line) => this._scrollToHeading({ line });
+    eventBus.on('jump-to-line', this._jumpHandler);
+    // 大纲点击定位（含 include 标题）：优先用 id 精确滚到预览标题；id 缺失回退行号映射
+    this._jumpToHeadingHandler = (payload) => this._scrollToHeading(payload || {});
+    eventBus.on('jump-to-heading', this._jumpToHeadingHandler);
     this._formatHandler = (format) => {
       this._currentFormat = format;
       if (this._lastContent) this._render(this._lastContent);
@@ -286,6 +290,8 @@ class PreviewPane extends LitElement {
     if (this._visHandler) eventBus.off('preview-visibility-changed', this._visHandler);
     if (this._viewModeHandler) eventBus.off('view-mode-changed', this._viewModeHandler);
     if (this._formatHandler) eventBus.off('file-format-changed', this._formatHandler);
+    if (this._jumpHandler) eventBus.off('jump-to-line', this._jumpHandler);
+    if (this._jumpToHeadingHandler) eventBus.off('jump-to-heading', this._jumpToHeadingHandler);
     clearTimeout(this._debounceTimer);
   }
 
@@ -338,7 +344,7 @@ class PreviewPane extends LitElement {
       this.renderedHtml = mdHtml;
       setRendered('md', null, body, mdHtml);
     } else {
-      if (!asciidoctor) return;
+      if (!this._asciidoctor) return;
       const baseAttrs = {
         showtitle: true,
         toc: 'auto',
@@ -351,16 +357,9 @@ class PreviewPane extends LitElement {
       const adocCached = getRendered('adoc', baseAttrs, content);
       if (adocCached !== null) { this.renderedHtml = adocCached; return; }
       // 解析 include 指令（仅缓存未命中时执行）
-      let resolved = content;
-      const activePath = editorState.activeFilePath;
-      if (activePath && !activePath.startsWith('__untitled_') && content.includes('include::')) {
-        try {
-          const dir = activePath.replace(/\/[^/]+$/, '');
-          resolved = await resolveIncludes(content, dir);
-        } catch (_) {}
-      }
+      const resolved = await resolveIncludesIfAny(content, editorState.activeFilePath);
       const attrs = buildAttributes(resolved, baseAttrs);
-      const html = asciidoctor.convert(resolved, {
+      const html = this._asciidoctor.convert(resolved, {
         safe: 'safe',
         attributes: attrs,
       });
@@ -419,6 +418,58 @@ class PreviewPane extends LitElement {
     this._ignoreScroll = false;
   }
 
+  // renderedHtml 更新后（DOM 已注入）建立 行号→标题元素 映射
+  updated(changedProps) {
+    if (changedProps.has('renderedHtml') && this.renderedHtml) this._buildHeadingMap();
+  }
+
+  // renderedHtml 更新后建立 行号→标题元素 映射（供 backlinks 的 jump-to-line、以及无 id 标题的回退定位）
+  async _buildHeadingMap() {
+    const path = editorState.activeFilePath;
+    if (!path) { this._lineToHeadingEl = null; return; }
+    const content = editorState.getFile(path)?.content ?? '';
+    try {
+      // 复用 outline-parser：adoc 含 include 时标题序列与预览 DOM 同源（同为 asciidoctor），下标对齐可靠
+      const headings = await parseOutline(content, path);
+      const els = [...this.shadowRoot.querySelectorAll('.preview-content :is(h1,h2,h3,h4,h5,h6)')];
+      const map = new Map();
+      const n = Math.min(els.length, headings.length);
+      for (let i = 0; i < n; i++) {
+        if (parseInt(els[i].tagName.slice(1), 10) !== headings[i].level) break;
+        if (headings[i].line != null) map.set(headings[i].line, els[i]);
+      }
+      this._lineToHeadingEl = map;
+    } catch (_) {
+      this._lineToHeadingEl = null;
+    }
+  }
+
+  // 预览侧统一入口：优先用 id 精确定位（asciidoctor 标题）；id 缺失（doc title / Markdown）回退行号映射。
+  // 仅 preview 模式接管——edit/split 由编辑器定位 + 比例同步跟随，避免双向滚动打架。
+  _scrollToHeading({ id, line }) {
+    if (this._viewMode !== 'preview') return;
+    let el = null;
+    if (id != null) el = this.shadowRoot.getElementById(id);
+    if (!el && line != null) el = this._lineToHeadingEl?.get(line);
+    el?.scrollIntoView({ block: 'start' });
+  }
+
+  // 拦截预览内的内部锚点链接（asciidoc TOC / <<anchor>> / xref / sectanchors）。
+  // shadow DOM 内浏览器默认 fragment 导航不穿透 shadowRoot，需手动定位。
+  _onPreviewClick(e) {
+    if (this._viewMode === 'edit') return;
+    const a = e.target.closest('a');
+    if (!a) return;
+    const href = a.getAttribute('href') || '';
+    if (!href.startsWith('#') || href === '#') return;
+    e.preventDefault();
+    const raw = href.slice(1);
+    // 先按原始 id 查（asciidoctor 生成的 id 无编码）；未命中再 decode（浏览器编码的中文锚点），畸形 % 兜底
+    let target = this.shadowRoot.getElementById(raw);
+    if (!target) { try { target = this.shadowRoot.getElementById(decodeURIComponent(raw)); } catch (_) {} }
+    target?.scrollIntoView({ block: 'start' });
+  }
+
   _close() {
     eventBus.emit('preview-close');
   }
@@ -430,7 +481,7 @@ class PreviewPane extends LitElement {
       </div>
       ${!this.renderedHtml
         ? html`<div class="placeholder">${t('preview.placeholder')}</div>`
-        : html`<div class="preview-content">${unsafeHTML(this.renderedHtml)}</div>`
+        : html`<div class="preview-content" @click=${(e) => this._onPreviewClick(e)}>${unsafeHTML(this.renderedHtml)}</div>`
       }
     `;
   }

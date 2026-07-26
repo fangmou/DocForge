@@ -675,6 +675,7 @@ class EditorPane extends LitElement {
       'set-word-wrap': (val) => this._setWrap(val),
       'font-size-set': (size) => this._setFontSize(size),
       'jump-to-line': (line) => this._jumpToLine(line),
+      'jump-to-heading': ({ line }) => { if (line != null) this._jumpToLine(line); },
       'file-renamed': ({ oldPath, newPath }) => this._onFileRenamed(oldPath, newPath),
       'replace-editor-content': (content) => this._replaceContent(content),
       'file-closed': (path) => this._onFileClosed(path),

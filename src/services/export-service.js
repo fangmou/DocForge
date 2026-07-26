@@ -55,13 +55,7 @@ export async function exportToHtml(content, sourcePath) {
   } else {
     const adoc = await getAsciidoctor();
     // 解析 include 指令
-    let resolved = content;
-    if (sourcePath && !sourcePath.startsWith('__untitled_') && content.includes('include::')) {
-      try {
-        const dir = sourcePath.replace(/\/[^/]+$/, '');
-        resolved = await resolveIncludes(content, dir);
-      } catch (_) {}
-    }
+    const resolved = await resolveIncludesIfAny(content, sourcePath);
 
     // 加载 asciidoc 引擎配置获取 extra_args
     let extraArgs = '';
@@ -154,6 +148,20 @@ export async function openInBrowser(htmlContent) {
 
 export async function resolveIncludes(content, baseDir) {
   return invoke()('resolve_includes', { content, baseDir });
+}
+
+/** 若 content 含 include:: 且 sourcePath 可定位目录，预展开；否则原样返回（失败也不抛）。
+ *  供预览渲染 / 大纲解析 / 导出三处共用，避免 include 触发判定与目录取法各写一份。 */
+export async function resolveIncludesIfAny(content, sourcePath) {
+  if (!sourcePath || sourcePath.startsWith('__untitled_') || !content.includes('include::')) return content;
+  const dir = sourcePath.includes('/') ? sourcePath.replace(/\/[^/]+$/, '') : '';
+  if (!dir) return content;
+  try {
+    return await resolveIncludes(content, dir);
+  } catch (e) {
+    console.warn('[adoc] resolveIncludes 失败，include 章节将不展开:', e);
+    return content;
+  }
 }
 
 export async function pickDocxFile() {

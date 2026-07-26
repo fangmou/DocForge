@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { eventBus } from '../services/event-bus.js';
 import { editorState } from '../services/editor-state.js';
-import { linkIndex } from '../services/link-index.js';
+import { parseOutline } from '../services/outline-parser.js';
 import { t } from '../services/i18n.js';
 import { activateOnKey } from '../services/a11y.js';
 
@@ -119,6 +119,7 @@ class OutlinePanel extends LitElement {
       text-overflow: ellipsis;
     }
     .heading.filtered-out { display: none; }
+    .heading-inc { color: var(--text-3); font-style: italic; }
     .empty {
       color: var(--text-3);
       text-align: center;
@@ -178,9 +179,9 @@ class OutlinePanel extends LitElement {
     this._debounceTimer = setTimeout(async () => {
       const path = editorState.activeFilePath;
       if (!path) { this.headings = []; return; }
+      const content = editorState.getFile(path)?.content ?? '';
       try {
-        if (linkIndex.ready) await linkIndex.ready;
-        this.headings = await linkIndex.getHeadings(path);
+        this.headings = await parseOutline(content, path);
       } catch (_) {
         this.headings = [];
       }
@@ -219,7 +220,7 @@ class OutlinePanel extends LitElement {
     for (let i = idx - 1; i >= 0; i--) {
       if (tree[i].level < h.level) {
         // tree[i] 是祖先
-        if (this.collapsed.has(tree[i].line)) return true;
+        if (this.collapsed.has(i)) return true;
         // 继续向上检查更远的祖先是否也被折叠
       }
     }
@@ -243,10 +244,10 @@ class OutlinePanel extends LitElement {
     return false;
   }
 
-  _toggleCollapse(line) {
+  _toggleCollapse(idx) {
     const s = new Set(this.collapsed);
-    if (s.has(line)) s.delete(line);
-    else s.add(line);
+    if (s.has(idx)) s.delete(idx);
+    else s.add(idx);
     this.collapsed = s;
   }
 
@@ -257,14 +258,14 @@ class OutlinePanel extends LitElement {
   _collapseAll() {
     const tree = this._getTree();
     const s = new Set();
-    for (const node of tree) {
-      if (node.hasChildren && node.level >= 1) s.add(node.line);
-    }
+    tree.forEach((node, i) => {
+      if (node.hasChildren && node.level >= 1) s.add(i);
+    });
     this.collapsed = s;
   }
 
   _jumpTo(heading) {
-    eventBus.emit('jump-to-line', heading.line);
+    eventBus.emit('jump-to-heading', { id: heading.id, line: heading.line });
   }
 
   render() {
@@ -299,13 +300,13 @@ class OutlinePanel extends LitElement {
             if (this.filter && !this._isVisible(tree, idx)) return '';
             return html`
               <div
-                class="heading ${h.level === 1 ? 'heading-l1' : ''}"
+                class="heading ${h.level === 1 ? 'heading-l1' : ''} ${h.line == null ? 'heading-inc' : ''}"
                 style="padding-left: ${(h.level - 1) * 16 + 14}px"
                 @click=${() => this._jumpTo(h)}
-                title="${h.text}"
+                title="${h.text}${h.line == null ? '（来自 include，仅定位预览）' : ''}"
               >
                 ${h.hasChildren
-                  ? html`<span class="toggle" @click=${(e) => { e.stopPropagation(); this._toggleCollapse(h.line); }}>${this.collapsed.has(h.line) ? '▶' : '▼'}</span>`
+                  ? html`<span class="toggle" @click=${(e) => { e.stopPropagation(); this._toggleCollapse(idx); }}>${this.collapsed.has(idx) ? '▶' : '▼'}</span>`
                   : html`<span style="width:14px;flex-shrink:0"></span>`
                 }
                 <span class="label">${h.text}</span>
