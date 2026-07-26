@@ -1,6 +1,6 @@
 import { LitElement, css } from 'lit';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, ViewPlugin, Decoration } from '@codemirror/view';
-import { EditorState, Compartment, RangeSetBuilder, Transaction } from '@codemirror/state';
+import { EditorState, Compartment, RangeSetBuilder } from '@codemirror/state';
 import { history, indentWithTab, undo, redo, standardKeymap, selectAll, moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, indentMore, indentLess, indentSelection, cursorMatchingBracket, insertBlankLine, addCursorAbove, addCursorBelow, selectLine, selectParentSyntax, cursorPageUp, cursorPageDown } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -649,6 +649,12 @@ class EditorPane extends LitElement {
     this._vimEnabled = false;
     this._lastVimMode = '';
     this._vimModeChangeHandler = null;
+    // 多文档独立 EditorState 缓存：path → EditorState（每个文档独立的 history/撤销栈）
+    this._docStates = new Map();
+    // 各文档的滚动位置：EditorState 不存 scrollTop，setState 会重建 docView 把 scrollTop 钳为 0，需旁路保存/恢复
+    this._docScroll = new Map();
+    this._theme = null;      // 'light' | 'dark'，切换文档后需把缓存的旧 state 重应用主题
+    this._wordWrap = false;  // 软换行开关，切换文档后需重应用
   }
 
   connectedCallback() {
@@ -785,57 +791,7 @@ class EditorPane extends LitElement {
     this._view = new EditorView({
       state: EditorState.create({
         doc: t('editor.placeholder'),
-        extensions: [
-          lineNumbers(),
-          highlightActiveLineGutter(),
-          highlightActiveLine(),
-          history(),
-          foldGutter(),
-          drawSelection(),
-          indentOnInput(),
-          bracketMatching(),
-          closeBrackets(),
-          rectangularSelection(),
-          completionCompartment.of(autocompletion({ override: [asciidocCompletions] })),
-          search(),
-          phrasesCompartment.of(EditorState.phrases.of(buildCmPhrases())),
-          includeLinkPlugin,
-          wrapCompartment.of([]),
-          // 标准 + 补全键位映射（vim/自定义快捷键优先拦截）
-          baseKeymapCompartment.of(keymap.of(_buildBaseKeymap(false))),
-          vimCompartment.of([]),
-          // 自定义快捷键（放在标准 keymap 之前，可覆盖标准绑定）
-          keymapCompartment.of(keymap.of([])),
-          languageCompartment.of(asciidocLanguage()),
-          syntaxHighlighting(defaultHighlightStyle),
-          themeCompartment.of([]),
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged && !this._updatingFromExternal) {
-              const content = update.state.doc.toString();
-              const statePath = this._currentPath || editorState.activeFilePath;
-              if (statePath) {
-                editorState.updateContent(statePath, content);
-              }
-              eventBus.emit('content-changed', content);
-              // 自动保存（仅对已保存到磁盘的文件，且未禁用）
-              if (this._currentPath && !this._currentPath.startsWith('__untitled_') && this._autoSaveDelay > 0) {
-                clearTimeout(this._autoSaveTimer);
-                this._autoSaveTimer = setTimeout(() => this._saveFile(), this._autoSaveDelay);
-              }
-            }
-            if (update.selectionSet) {
-              const pos = update.state.selection.main.head;
-              const line = update.state.doc.lineAt(pos);
-              eventBus.emit('cursor-changed', { line: line.number, col: pos - line.from });
-            }
-          }),
-          EditorView.theme({
-            '&': { height: '100%' },
-            '.cm-scroller': { overflow: 'auto' },
-            '.cm-include-link': { textDecoration: 'underline', cursor: 'pointer' },
-            '.cm-include-link:hover': { backgroundColor: 'rgba(91, 155, 213, 0.1)' },
-          }),
-        ],
+        extensions: this._editorExtensions(),
       }),
       parent: container,
     });
@@ -868,6 +824,62 @@ class EditorPane extends LitElement {
     container.addEventListener('focusin', () => this._checkExternalChange());
 
     this._loadConfig();
+  }
+
+  /** 构建编辑器 extensions：所有文档 state 共享同一套（仅 doc/history 各自隔离）。
+   *  updateListener 闭包捕获 this，故任意文档上屏时都能按 this._currentPath 正确同步内容。 */
+  _editorExtensions() {
+    return [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      history(),
+      foldGutter(),
+      drawSelection(),
+      indentOnInput(),
+      bracketMatching(),
+      closeBrackets(),
+      rectangularSelection(),
+      completionCompartment.of(autocompletion({ override: [asciidocCompletions] })),
+      search(),
+      phrasesCompartment.of(EditorState.phrases.of(buildCmPhrases())),
+      includeLinkPlugin,
+      wrapCompartment.of([]),
+      // 标准 + 补全键位映射（vim/自定义快捷键优先拦截）
+      baseKeymapCompartment.of(keymap.of(_buildBaseKeymap(false))),
+      vimCompartment.of([]),
+      // 自定义快捷键（放在标准 keymap 之前，可覆盖标准绑定）
+      keymapCompartment.of(keymap.of([])),
+      languageCompartment.of(asciidocLanguage()),
+      syntaxHighlighting(defaultHighlightStyle),
+      themeCompartment.of([]),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged && !this._updatingFromExternal) {
+          const content = update.state.doc.toString();
+          const statePath = this._currentPath || editorState.activeFilePath;
+          if (statePath) {
+            editorState.updateContent(statePath, content);
+          }
+          eventBus.emit('content-changed', content);
+          // 自动保存（仅对已保存到磁盘的文件，且未禁用）
+          if (this._currentPath && !this._currentPath.startsWith('__untitled_') && this._autoSaveDelay > 0) {
+            clearTimeout(this._autoSaveTimer);
+            this._autoSaveTimer = setTimeout(() => this._saveFile(), this._autoSaveDelay);
+          }
+        }
+        if (update.selectionSet) {
+          const pos = update.state.selection.main.head;
+          const line = update.state.doc.lineAt(pos);
+          eventBus.emit('cursor-changed', { line: line.number, col: pos - line.from });
+        }
+      }),
+      EditorView.theme({
+        '&': { height: '100%' },
+        '.cm-scroller': { overflow: 'auto' },
+        '.cm-include-link': { textDecoration: 'underline', cursor: 'pointer' },
+        '.cm-include-link:hover': { backgroundColor: 'rgba(91, 155, 213, 0.1)' },
+      }),
+    ];
   }
 
   async _loadConfig() {
@@ -953,28 +965,8 @@ class EditorPane extends LitElement {
       this._view.dispatch({
         effects: vimCompartment.reconfigure(vim()),
       });
-      // 立即通知初始模式
-      this._lastVimMode = 'normal';
-      eventBus.emit('vim-mode-changed', 'normal');
-      // 通过 CodeMirror 内部事件系统监听模式变化
-      const cm = getCM(this._view);
-      if (cm && !this._vimModeChangeHandler) {
-        this._vimModeChangeHandler = (e) => {
-          if (!this._vimEnabled) return;
-          const mode = e.mode || '';
-          if (mode !== this._lastVimMode) {
-            this._lastVimMode = mode;
-            eventBus.emit('vim-mode-changed', mode);
-          }
-        };
-        cm.on('vim-mode-change', this._vimModeChangeHandler);
-        // 启动时立即通知当前模式
-        const vimState = cm.state?.vim;
-        if (vimState?.mode) {
-          this._lastVimMode = vimState.mode;
-          eventBus.emit('vim-mode-changed', vimState.mode);
-        }
-      }
+      // 绑定模式变化 handler 并通知初始模式（切文档后 cm 重建，需重新绑定，见 _reattachVimHandler）
+      this._reattachVimHandler();
     } else {
       // 清除插入模式映射
       if (this._vimEscapeSeq && this._vimEscapeSeq.length >= 2) {
@@ -1001,6 +993,34 @@ class EditorPane extends LitElement {
     this._applyShortcutKeymap(shortcutRegistry);
   }
 
+  /** 把 vim 模式变化 handler 绑到当前 view 的 cm，并立即同步一次模式。
+   *  每次 setState（切文档）会销毁旧 vim 插件实例、创建新的 CodeMirror facade，
+   *  旧 handler 随旧 cm 失效，必须重新绑定——否则状态栏 vim 模式指示器永久停在旧值。 */
+  _reattachVimHandler() {
+    if (!this._vimEnabled || !this._view) return;
+    const cm = getCM(this._view);
+    if (!cm) return;
+    if (!this._vimModeChangeHandler) {
+      this._vimModeChangeHandler = (e) => {
+        if (!this._vimEnabled) return;
+        const mode = e.mode || '';
+        if (mode !== this._lastVimMode) {
+          this._lastVimMode = mode;
+          eventBus.emit('vim-mode-changed', mode);
+        }
+      };
+    }
+    // 先 off 再 on：cm 复用时去重，避免重复注册使回调多次触发；新 cm 上 off 为 no-op
+    cm.off('vim-mode-change', this._vimModeChangeHandler);
+    cm.on('vim-mode-change', this._vimModeChangeHandler);
+    // 立即同步当前模式（setState 后 vim 重置为 normal）
+    const mode = cm.state?.vim?.mode || 'normal';
+    if (mode !== this._lastVimMode) {
+      this._lastVimMode = mode;
+      eventBus.emit('vim-mode-changed', mode);
+    }
+  }
+
   /** 通过 Vim.handleKey 切换 Vim 子模式 */
   _setVimSubmode(mode) {
     if (!this._view || !this._vimEnabled) return;
@@ -1020,7 +1040,7 @@ class EditorPane extends LitElement {
 
   // ─── 格式感知的标记操作辅助方法 ───
 
-  _updateFormat(path) {
+  _updateFormat(path, { switchLanguage = true } = {}) {
     this._currentFormat = getFormat(path);
     // untitled 文件默认为 AsciiDoc 格式
     if (!this._currentFormat && path?.startsWith('__untitled_')) {
@@ -1028,7 +1048,9 @@ class EditorPane extends LitElement {
     }
     _currentFormatId = this._currentFormat?.id || null;
     eventBus.emit('file-format-changed', this._currentFormat);
-    this._switchLanguage();
+    // 切换文档时语言由 _applyDynamicConfig（setState 之后）统一应用；若在此处先切，
+    // _switchLanguage 会作用于尚未切换的旧文档 state，污染其缓存的 language compartment。
+    if (switchLanguage) this._switchLanguage();
   }
 
   async _switchLanguage() {
@@ -1116,6 +1138,7 @@ class EditorPane extends LitElement {
   }
 
   _applyWrap(enabled) {
+    this._wordWrap = enabled;
     this._view.dispatch({
       effects: wrapCompartment.reconfigure(enabled ? EditorView.lineWrapping : []),
     });
@@ -1181,20 +1204,95 @@ class EditorPane extends LitElement {
     if (this._view) openSearchPanel(this._view);
   }
 
-  _setEditorContent(content) {
+  /** 切换到指定文档：恢复其独立的 EditorState（含独立 history/撤销栈与光标位置）。
+   *  首次打开则用 content 创建新 state 并缓存。setState 后重应用动态配置，因为缓存的旧
+   *  state 持有的是创建时刻的 compartment 值（主题/换行/vim/语言等可能此后已变化）。 */
+  _switchToDoc(path, content) {
+    if (!this._view) return;
+    // 先保存当前文档的 state（用尚未切换的 _currentPath 作 key），再切换路径标识，
+    // 否则 capture 会把旧文档的 state 写到新路径的 key 上，导致切换错乱。
+    this._captureCurrentState();
+    this._currentPath = path;
+    // 惰性回收已关闭文档的缓存（关闭 tab 走 file-opened 分支时不触发 file-closed）
+    this._reapDocStates();
+    let state = this._docStates.get(path);
+    if (!state) {
+      state = EditorState.create({
+        doc: content ?? '',
+        extensions: this._editorExtensions(),
+      });
+      this._docStates.set(path, state);
+    }
+    this._updatingFromExternal = true;
+    this._view.setState(state);
+    this._updatingFromExternal = false;
+    this._applyDynamicConfig();
+    // 恢复滚动位置：setState 重建 docView 会把 scrollTop 钳为 0，需在重排后还原
+    const savedScroll = this._docScroll.get(path);
+    if (savedScroll) {
+      requestAnimationFrame(() => {
+        if (this._view) this._view.scrollDOM.scrollTop = savedScroll;
+      });
+    }
+  }
+
+  /** 把当前 view 上的 state（含其 history/光标/滚动）写回缓存，供下次切回复原。
+   *  仅当该文档仍处于打开状态时才保存（关闭/另存为后旧路径不应再残留缓存）。 */
+  _captureCurrentState() {
+    if (this._currentPath && this._view && editorState.getFile(this._currentPath)) {
+      this._docStates.set(this._currentPath, this._view.state);
+      // 一并保存滚动位置（EditorState 不含 scrollTop，切回复原需旁路记录）
+      this._docScroll.set(this._currentPath, this._view.scrollDOM.scrollTop);
+    }
+  }
+
+  /** 回收不再打开的文档缓存，避免关闭 tab 后残留 state（内存泄漏） */
+  _reapDocStates() {
+    for (const p of this._docStates.keys()) {
+      if (!editorState.getFile(p)) {
+        this._docStates.delete(p);
+        this._docScroll.delete(p);
+      }
+    }
+  }
+
+  /** setState 之后重应用所有可变 compartment：reconfigure 只作用于当前 view，缓存的旧 state
+   *  不会自动跟随全局配置变化，故每次切文档后需手动同步一次，避免「换 tab 后主题/快捷键回退」。 */
+  _applyDynamicConfig() {
+    if (!this._view) return;
+    this._view.dispatch({
+      effects: [
+        themeCompartment.reconfigure(this._theme === 'dark' ? oneDark : []),
+        wrapCompartment.reconfigure(this._wordWrap ? EditorView.lineWrapping : []),
+        phrasesCompartment.reconfigure(EditorState.phrases.of(buildCmPhrases())),
+        vimCompartment.reconfigure(this._vimEnabled ? vim() : []),
+        baseKeymapCompartment.reconfigure(keymap.of(_buildBaseKeymap(this._vimEnabled))),
+      ],
+    });
+    // 自定义快捷键（含 vim 相关的 Ctrl-B/Ctrl-F 绑定）
+    this._applyShortcutKeymap(shortcutRegistry);
+    // 语言/补全：绕过 _lastSwitchedFormat 缓存，强制按当前格式重设
+    this._lastSwitchedFormat = null;
+    this._switchLanguage();
+    // vim：setState 重建了 vim 插件与新 CodeMirror facade，需重新绑定模式监听
+    this._reattachVimHandler();
+  }
+
+  /** 无打开文件时的占位：显示空文档（不进入 _docStates 缓存） */
+  _showEmptyState() {
     if (!this._view) return;
     this._updatingFromExternal = true;
-    this._view.dispatch({
-      changes: { from: 0, to: this._view.state.doc.length, insert: content },
-      selection: { anchor: 0 },
-      annotations: Transaction.addToHistory.of(false),
-    });
+    this._view.setState(EditorState.create({
+      doc: '',
+      extensions: this._editorExtensions(),
+    }));
     this._updatingFromExternal = false;
+    this._applyDynamicConfig();
   }
 
   async _openFile(path, content, binary) {
     clearTimeout(this._autoSaveTimer);
-    this._currentPath = path;
+    // _currentPath 不在此处设置：交由 _switchToDoc 在保存旧文档 state 后切换
     // 同时支持显式 binary 标志和扩展名检测（tab 切换不带 binary 标志）
     this._isBinary = !!(binary || isBinaryFile(path));
     // 二进制文件：自动切预览模式（通过 set-view-mode 触发 app-shell 布局更新）
@@ -1207,8 +1305,8 @@ class EditorPane extends LitElement {
       eventBus.emit('set-view-mode', this._viewModeBeforeBinary);
       this._viewModeBeforeBinary = null;
     }
-    this._updateFormat(path);
-    this._setEditorContent(content);
+    this._updateFormat(path, { switchLanguage: false });
+    this._switchToDoc(path, content);
     eventBus.emit('content-changed', content);
     // 记录文件 mtime 用于外部修改检测
     this._fileMtime = null;
@@ -1248,6 +1346,7 @@ class EditorPane extends LitElement {
 
   _setTheme(theme) {
     if (!this._view) return;
+    this._theme = theme;
     this._view.dispatch({
       effects: themeCompartment.reconfigure(theme === 'dark' ? oneDark : []),
     });
@@ -1281,12 +1380,20 @@ class EditorPane extends LitElement {
         await writeFile(savePath, content);
         // 记住旧路径用于清理 draft
         const oldPath = this._currentPath;
-        // 关闭旧的 untitled 条目
+        this._currentPath = savePath;
+        // 迁移独立 state 与滚动位置到新路径（保留编辑 history）
+        for (const map of [this._docStates, this._docScroll]) {
+          if (oldPath && map.has(oldPath)) {
+            map.set(savePath, map.get(oldPath));
+            map.delete(oldPath);
+          }
+        }
+        // 先注册新路径（activeFilePath → savePath），再关闭旧 untitled 条目，
+        // 避免 closeFile 提前把焦点切到相邻 tab，缩小 _currentPath 与 activeFilePath 不一致窗口
+        editorState.openFile(savePath, content);
         if (oldPath && oldPath.startsWith('__untitled_')) {
           editorState.closeFile(oldPath);
         }
-        this._currentPath = savePath;
-        editorState.openFile(savePath, content);
         editorState.markSaved(savePath);
         eventBus.emit('file-saved', { path: savePath, content });
         if (editorState.workspaceRoot) eventBus.emit('workspace-opened', editorState.workspaceRoot);
@@ -1392,16 +1499,22 @@ class EditorPane extends LitElement {
     clearTimeout(this._autoSaveTimer);
     this._untitledCounter++;
     const path = `__untitled_${this._untitledCounter}_${Date.now()}`;
-    this._currentPath = path;
     editorState.openFile(path, content);
     // 先更新格式再设置内容：includeLinkPlugin 在 docChanged 时按 _currentFormatId 重建装饰
-    this._updateFormat(path);
-    this._setEditorContent(content);
+    this._updateFormat(path, { switchLanguage: false });
+    this._switchToDoc(path, content);
     eventBus.emit('content-changed', content);
     this._view?.focus();
   }
 
   _onFileRenamed(oldPath, newPath) {
+    // 迁移独立 state 与滚动位置缓存到新路径（保留其 history）
+    for (const map of [this._docStates, this._docScroll]) {
+      if (map.has(oldPath)) {
+        map.set(newPath, map.get(oldPath));
+        map.delete(oldPath);
+      }
+    }
     if (this._currentPath === oldPath) {
       this._currentPath = newPath;
       this._updateFormat(newPath);
@@ -1409,6 +1522,8 @@ class EditorPane extends LitElement {
   }
 
   _onFileClosed(path) {
+    // 丢弃被关闭文档的独立 state（含其 history）
+    this._docStates.delete(path);
     if (this._currentPath === path) {
       this._isBinary = false;
       const active = editorState.getActiveFile();
@@ -1416,7 +1531,7 @@ class EditorPane extends LitElement {
         this._openFile(active.path, active.content);
       } else {
         this._currentPath = null;
-        this._setEditorContent('');
+        this._showEmptyState();
       }
     }
   }
@@ -1443,17 +1558,33 @@ class EditorPane extends LitElement {
     } catch (_) {}
   }
 
-  /** 从磁盘重新加载当前文件（接受外部修改）：内容覆盖内存并视为干净，清除冲突标记 */
+  /** 从磁盘重新加载当前文件（接受外部修改）：内容覆盖内存并视为干净，清除冲突标记。
+   *  外部覆盖后旧 history（撤销栈指向被覆盖的旧内容）已无意义，故重建 state 丢弃之。 */
   async _reloadFromDisk() {
-    if (!this._currentPath || this._currentPath.startsWith('__untitled_')) return;
+    const path = this._currentPath;
+    if (!path || path.startsWith('__untitled_')) return;
     if (this._isBinary) return;
     try {
-      const content = await readFile(this._currentPath);
-      this._setEditorContent(content);
+      const content = await readFile(path);
+      // await 期间可能已切换文档：仅当目标仍是当前文档时才上屏，避免把内容写到别的文档
+      const isCurrent = this._currentPath === path;
+      const state = EditorState.create({
+        doc: content,
+        extensions: this._editorExtensions(),
+      });
+      this._docStates.set(path, state);
+      if (isCurrent) {
+        this._updatingFromExternal = true;
+        this._view.setState(state);
+        this._updatingFromExternal = false;
+        this._applyDynamicConfig();
+      }
       // reloadContent 同步内存内容、清 isDirty 与 hasExternalConflict（内容已与磁盘一致）
-      editorState.reloadContent(this._currentPath, content);
-      eventBus.emit('content-changed', content);
-      this._fileMtime = await getFileMtime(this._currentPath).catch(() => null);
+      editorState.reloadContent(path, content);
+      if (isCurrent) {
+        eventBus.emit('content-changed', content);
+        this._fileMtime = await getFileMtime(path).catch(() => null);
+      }
     } catch (_) {}
   }
 
