@@ -354,7 +354,7 @@ class TabBar extends LitElement {
                 : f.isDirty ? html`<span class="dirty">●</span>` : ''}
               <span class="close" role="button" tabindex="0" title="${t('tab.close')}"
                 @keydown=${activateOnKey}
-                @click=${(e) => { e.stopPropagation(); this._openMenu = ''; this._closeTab(f.path, e); }}>✕</span>
+                @click=${(e) => { e.stopPropagation(); this._closeTab(f.path, e); }}>✕</span>
             </div>
           `
         )}

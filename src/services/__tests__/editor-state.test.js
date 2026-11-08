@@ -69,16 +69,24 @@ describe('EditorState', () => {
     expect(state.tabOrder).toEqual(['/ws/a.adoc', '/ws/c.adoc']);
   });
 
-  it('closing active middle file switches to previous', () => {
+  it('closing active middle file switches to next', () => {
     state.openFile('/ws/a.adoc', 'a');
     state.openFile('/ws/b.adoc', 'b');
     state.openFile('/ws/c.adoc', 'c');
     // Make b active, then close it
     state.setActiveFile('/ws/b.adoc');
     state.closeFile('/ws/b.adoc');
-    // tabOrder filter 先执行，indexOf 在 filter 后的数组里找 b 为 -1
-    // Math.min(-1, 1) = -1, Math.max(0, -1) = 0 → 跳到 a
-    expect(state.activeFilePath).toBe('/ws/a.adoc');
+    // 激活被关闭 tab 原位的下一个（b 的下一个是 c）
+    expect(state.activeFilePath).toBe('/ws/c.adoc');
+  });
+
+  it('closing active first file switches to next', () => {
+    state.openFile('/ws/a.adoc', 'a');
+    state.openFile('/ws/b.adoc', 'b');
+    state.openFile('/ws/c.adoc', 'c');
+    state.setActiveFile('/ws/a.adoc');
+    state.closeFile('/ws/a.adoc');
+    expect(state.activeFilePath).toBe('/ws/b.adoc');
   });
 
   it('closing last active file switches to previous', () => {

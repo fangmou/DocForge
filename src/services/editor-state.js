@@ -29,11 +29,12 @@ export class EditorState {
   }
 
   closeFile(path) {
+    // 先在被关闭 tab 的原位记下索引，再移除：移除后 tabOrder[idx] 即原「下一个」tab
+    const idx = this.tabOrder.indexOf(path);
     this.files.delete(path);
     this.tabOrder = this.tabOrder.filter(p => p !== path);
     if (this.activeFilePath === path) {
-      const idx = this.tabOrder.indexOf(path);
-      // 切换到相邻标签
+      // 切换到相邻标签：优先原位的下一个，关闭末位时回退到前一个
       const nextIdx = Math.min(idx, this.tabOrder.length - 1);
       this.activeFilePath = this.tabOrder.length > 0 ? this.tabOrder[Math.max(0, nextIdx)] : null;
     }
